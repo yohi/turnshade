@@ -12,24 +12,18 @@ Chrome標準の **Split View（左右に並べたChatGPTの2画面）** 用拡�
 
 グレー表示はクリックを遮りません。灰色画面でもスクロール、コピー、クリック可能です。
 
-## 正式リリースパッケージ
+## 正式リリースパッケージと自動バージョン管理
 
-最新版は [GitHub Releases](https://github.com/yohi/turnshade/releases/latest) の **Assets** にある `turnshade-vX.Y.Z.zip` をダウンロードしてください（GitHubが自動生成する **Source code (zip)** ではありません）。
+最新版は [GitHub Releases](https://github.com/yohi/turnshade/releases/latest) の **Assets** にある `turnshade-vX.Y.Z.zip` をダウンロードしてください。GitHubが自動生成する **Source code (zip)** は拡張本体の配布物ではありません。
 
-`master` へのpush時にCIでJavaScript構文と単体テストを検証し、拡張本体8ファイルだけをZIP化します。`manifest.json` の `version` に対応する `vX.Y.Z` タグが未発行の場合のみ、GitHub ReleaseとSHA-256チェックサムを自動作成します。同じバージョンのReleaseは上書きしません。**次の配布時は `manifest.json` のバージョンを更新してください。**
+- CIの実行環境は `ubuntu-slim`。PushとPull RequestでJavaScript構文と単体テストを検証し、拡張ファイルのみZIP化します。
+- Google製の [release-please](https://github.com/googleapis/release-please) が、`master` 上の **Conventional Commits** から次のバージョンを判定し、**Release PR** を作成します。
+- 例: `fix: repair shade detection` はpatch (`1.1.0 → 1.1.1`)、`feat: add a shortcut` はminor (`1.1.0 → 1.2.0`)、`feat!: change supported layouts` はmajor (`1.1.0 → 2.0.0`)。
+- Release PRには `CHANGELOG.md`、`version.txt`、`.release-please-manifest.json`、`manifest.json` のバージョン更新が含まれます。**普段は手動でバージョンを上げないでください。**
+- Release PRを`master`にマージすると、release-pleaseが`vX.Y.Z`タグとGitHub Releaseを生成し、CIでテスト・作成した `turnshade-vX.Y.Z.zip` と `.sha256` をそのReleaseに添付します。
+- 既存の `v1.1.0` は起点として維持し、今回のCI移行だけで別バージョンは発行しません。
 
-
-## 重要: v1.0.0からの更新
-
-v1.0.0はペア認識失敗・送信検出失敗が画面に出ず、何も変化しないままになりました。
-本バージョンは、次を追加しました。
-
-1. 送信ボタン名の追加対応（`composer-submit-button`等）。
-2. ボタン/Enter/submitを通らなくても新しいユーザーメッセージのDOM追加を監視。
-3. 送信操作後の入力欄クリアによる代替検出。
-4. **拡張アイコン → 状態表示**で、ペアの認識・送信検出・網掛け状態を確認可能。
-5. **拡張アイコン → この画面をグレーにする**で、送信せずに網掛け通信を直接確認可能。
-6. Chrome標準の分割ではなく、同じウィンドウの通常ChatGPTタブ2枚を使う場合の**任意**のペアモード。
+**運用上の注意:** `GITHUB_TOKEN` がRelease PRを作成できない場合は、GitHubリポジトリの **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests** を有効にしてください。また、`GITHUB_TOKEN` が作成したPRは後続の通常のCIトリガーを発火させないため、リリースPRは内容を確認してからマージしてください。
 
 ## インストール・更新方法
 
