@@ -15,7 +15,9 @@ function mock() {
     [5,{id:5,windowId:11,splitViewId:-1,url:'https://chatgpt.com/c/e'}],
     [6,{id:6,windowId:11,splitViewId:-1,url:'https://gemini.google.com/app/c/f'}],
     [7,{id:7,windowId:12,splitViewId:-1,url:'https://chatgpt.com/'}],
-    [8,{id:8,windowId:12,splitViewId:-1,url:'https://example.org'}]
+    [8,{id:8,windowId:12,splitViewId:-1,url:'https://example.org'}],
+    [9,{id:9,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/g'}],
+    [10,{id:10,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/h'}]
   ]);
   const messages=[]; const handlers={}; const session={}; const local={};
   const event = name => ({addListener(fn){handlers[name]=fn;}});
@@ -141,4 +143,12 @@ test('other windows and non-HTTPS Gemini-lookalikes are rejected',async()=>{
   m.tabs.get(7).url='http://gemini.google.com/app';
   assert.equal((await m.msg('STS_SENT',7)).unhandled,true);
   assert.equal((await m.msg('STS_GET_STATUS',7,{popup:true})).provider,null);
+});
+
+test('original ChatGPT x ChatGPT split regression remains working',async()=>{
+  const m=mock();
+  assert.equal((await m.msg('STS_SENT',9)).applied,true);
+  assert.equal(lastShade(m,9),true);assert.equal(lastShade(m,10),false);
+  assert.equal((await m.msg('STS_SENT',10)).applied,true);
+  assert.equal(lastShade(m,9),false);assert.equal(lastShade(m,10),true);
 });
