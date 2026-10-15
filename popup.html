@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split Turn Shade</title>
+<style>
+body{font:13px/1.55 system-ui,-apple-system,sans-serif;width:320px;margin:0;padding:16px;background:#fff;color:#202020}
+h1{font-size:16px;margin:0 0 8px}p{margin:6px 0 12px}#status{padding:10px;background:#f5f5f5;border-radius:8px;white-space:pre-wrap;line-height:1.6;font-size:12px}
+button{border:1px solid #bbb;background:white;border-radius:7px;padding:9px 10px;cursor:pointer;font-weight:600}button:hover{background:#f1f1f1}
+.buttons{display:flex;gap:8px;margin:12px 0}.buttons button{flex:1}label{display:flex;align-items:center;gap:7px;padding:8px 0}
+small{display:block;color:#666;margin:4px 0 10px}#feedback{color:#9b2739;font-size:12px;min-height:18px}
+</style></head><body>
+<h1>ChatGPT Split Turn Shade</h1>
+<p>送信した側がグレーになり、反対側が通常表示に戻ります。</p>
+<div id="status">確認中...</div>
+<div class="buttons"><button id="test">この画面をグレーにする</button><button id="reset">両画面を解除</button></div>
+<label><input type="checkbox" id="fallback">通常タブ2枚でも連携する（任意）</label>
+<small>Chrome標準のSplit Viewが認識されない場合だけONにしてください。同じウィンドウにChatGPTタブがちょうど2枚必要です。</small>
+<div id="feedback"></div><button id="refresh">状態を更新</button>
+<script src="popup.js"></script>
+</body></html>

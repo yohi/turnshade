@@ -1,32 +1,74 @@
-# TurnShade
+# ChatGPT Split Turn Shade v1.1.0
 
-Chrome extension that makes turn-taking in vertically split ChatGPT conversations easier to follow.
+Chrome標準の **Split View（左右に並べたChatGPTの2画面）** 用拡張です。
+最後にメッセージを送信したChatGPT側だけをグレーにし、反対側のグレーは解除します。
 
-- Sending a message shades the sending ChatGPT pane.
-- The opposite pane becomes unshaded so the next turn is obvious.
-- Includes a popup for diagnostics, manual shading, and reset.
-- Works with Chrome's native Split View; an optional two-tab fallback is available.
+| イベント | 左 | 右 |
+|---|---|---|
+| 起動直後 | 通常 | 通常 |
+| 左で送信 | グレー | 通常 |
+| 右で送信 | 通常 | グレー |
+| 左で再送信 | グレー | 通常 |
 
-## Installing
+グレー表示はクリックを遮りません。灰色画面でもスクロール、コピー、クリック可能です。
 
-Use the built extension ZIP from [Actions](../../actions/workflows/package.yml): download the workflow's artifact, extract the inner `turnshade-vX.Y.Z.zip`, then load the extracted folder from `chrome://extensions` using **Load unpacked**. Both ChatGPT tabs must be reloaded after installation.
+## 重要: v1.0.0からの更新
 
-## Continuous integration
+v1.0.0はペア認識失敗・送信検出失敗が画面に出ず、何も変化しないままになりました。
+本バージョンは、次を追加しました。
 
-On each push to `master`, `.github/workflows/package.yml` validates the extension and creates `turnshade-v<manifest.version>.zip` containing only:
+1. 送信ボタン名の追加対応（`composer-submit-button`等）。
+2. ボタン/Enter/submitを通らなくても新しいユーザーメッセージのDOM追加を監視。
+3. 送信操作後の入力欄クリアによる代替検出。
+4. **拡張アイコン → 状態表示**で、ペアの認識・送信検出・網掛け状態を確認可能。
+5. **拡張アイコン → この画面をグレーにする**で、送信せずに網掛け通信を直接確認可能。
+6. Chrome標準の分割ではなく、同じウィンドウの通常ChatGPTタブ2枚を使う場合の**任意**のペアモード。
 
-- `manifest.json`
-- `service-worker.js`, `content.js`, `popup.js`, `popup.html`
-- `icons/icon16.png`, `icons/icon48.png`, `icons/icon128.png`
+## インストール・更新方法
 
-The artifact is retained for up to 90 days. The workflow can also be run manually. Releases and Chrome Web Store publication are not automated.
+1. Chromeのアドレスバーに `chrome://extensions` を入力。
+2. 旧版 `ChatGPT Split Turn Shade` v1.0.0 があれば**削除**（またはOFFにする）。
+3. ZIPを解凍する。
+4. **デベロッパー モード** をON → **パッケージ化されていない拡張機能を読み込む** → 今回の `chatgpt-split-turn-shade-v1.1.0` フォルダーを選択。
+5. Split Viewの**左右両方のChatGPTを再読み込み**する。これは必須です。
+6. ChatGPT側で1通送信して確認。
 
-The initial repository setup requires the extension source and image assets to be committed to `master` before CI can produce the ZIP.
+## 反応しない場合の検査手順（30秒）
 
-## Development
+1. ChatGPTを表示した側を選択し、ツールバーの拡張アイコン（ピン固定推奨）をクリック。
+2. ポップアップの **「ペア」** が `認識済み (Chrome標準Split View)` か確認。
+   - `未認識` の場合、これはChrome標準Split Viewではない可能性があります。`Chrome Split ID` が `-1` や `なし` である場合、任意の「通常タブ2枚でも連携する」をONにしてみてください。これは**同じChromeウィンドウ内のChatGPTタブがちょうど2枚**の場合のみ使えます。
+   - 左右を別ウィンドウにしたものは対象外です。
+3. **「拡張のページ監視」** が `読み込み済み` でなければ、左右のChatGPTを再読み込み。
+4. **「この画面をグレーにする」** を押す。
+   - グレーになればSplit/メッセージ連携の設定は成功。通常の送信でも反応しない場合は、`直近の検出` と `反映結果` を確認してください。
+   - グレーにならなければ `ペア` と `ページ監視` を再度確認してください。
+5. 状態情報のスクリーンショットを共有してもらえれば、どの段階の失敗か特定できます（会話本文は含みません）。
+
+## 実装とセキュリティ
+
+- Manifest V3 / Chrome 140以降。
+- Chrome標準Split Viewでは `tabs.Tab.splitViewId` により同じ分割ペアだけを更新。
+- 標準分割が未認識の時の「通常タブ2枚モード」は明示的なONのみ。
+- DOM内で送信タイミングの判定に使う文字の特徴量を計算しますが、会話本文は拡張のバックグラウンドに送信・保存しません。
+- 保存内容：Split ViewのペアID、タブID、最後の送信タブ、最終更新時刻、フォールバック設定のみ。
+- 外部サーバー接続なし。`tabs` 全体の閲覧権限も要求しません（ChatGPTドメインのみホスト権限）。
+- 誤検知防止のため、会話を開いた直後の一定時間は送信操作のないDOM変化での自動反転を抑止。
+
+## 制限事項
+
+ChatGPTのWeb画面は安定したDOMインターフェースを保証していないため、UI変更や外部自動化の実装方式によっては検出が失敗する可能性があります。
+Chrome標準Split Viewではない画面分割アプリや、**別ウィンドウ**同士の自動ペア判定はサポートしていません。
+
+## テスト
 
 ```sh
 node --test tests/service-worker.test.cjs
+python tests/content-browser-check.py
 ```
 
-The browser DOM smoke test at `tests/content-browser-check.py` requires local Playwright and Chromium; it is not a logged-in ChatGPT end-to-end test.
+2026-10-15時点：バックグラウンドのモック単体テスト8件PASS、Chromium 144のブラウザDOM模擬テストPASS。実ChatGPTサイトへのログイン済みE2EテストおよびChrome標準Split View上の実機統合テストは未実施です。
+
+参考：
+- https://developer.chrome.com/docs/extensions/reference/api/tabs
+- https://developer.chrome.com/blog/split-view-api-extensions

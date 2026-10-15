@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Split Turn Shade",
+  "short_name": "Split Turn Shade",
+  "version": "1.1.0",
+  "description": "左右に分割したChatGPTで、直前に送信した側をグレーにし、次の発言側を明確にします。",
+  "minimum_chrome_version": "140",
+  "permissions": ["storage"],
+  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+  "background": {"service_worker": "service-worker.js"},
+  "action": {"default_title": "ChatGPT Split Turn Shade - 状態と動作テスト", "default_popup": "popup.html"},
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": false
+  }]
+}
