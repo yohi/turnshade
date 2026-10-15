@@ -77,5 +77,5 @@ python tests/content-browser-check.py
 - 対象URLは `https://chatgpt.com/*`、`https://chat.openai.com/*`、`https://gemini.google.com/*` のみです。Chrome Split ViewのペアIDが同一の2タブならプロバイダー混在も認識します。
 - Geminiの送信判定は `user-query`、`rich-textarea .ql-editor`、`.send-button` などのDOM候補を使用します。Geminiの回答（`model-response`）をユーザー送信として数えないようにします。
 - プライバシー：会話テキスト・Cookie・認証トークンを送信／保存しません。正規のホスト名とHTTPSだけを受け付けます。
-- 自動テスト：`node --test tests/service-worker.test.cjs` （12件）、`python tests/content-browser-check.py` （既存ChatGPT合成DOM）、`python tests/gemini-browser-check.py` （Gemini合成DOM）。
+- 自動テスト：`node --test tests/service-worker.test.cjs` （13件）、`python tests/content-browser-check.py` （既存ChatGPT合成DOM）、`python tests/gemini-browser-check.py` （Gemini合成DOM）。
 - **未実施**：ログイン済みGemini実サイトでの送信判定、およびChrome標準Split Viewを使用した実機E2Eテスト。UI変更時には送信セレクターの調整が必要な場合があります。
