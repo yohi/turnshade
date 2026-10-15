@@ -9,11 +9,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: turnshade-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   package:
     name: Test and package TurnShade
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      version: ${{ steps.build.outputs.version }}
 
     steps:
       - name: Checkout source
@@ -93,3 +99,76 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           compression-level: 0
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated extension ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: turnshade-v${{ needs.package.outputs.version }}-${{ github.run_number }}
+          path: dist
+
+      - name: Publish immutable versioned Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          zip="dist/turnshade-$tag.zip"
+          test -f "$zip"
+          (cd dist && sha256sum "turnshade-$tag.zip" > "turnshade-$tag.zip.sha256")
+
+          # A superseded run must never publish its obsolete commit as a release.
+          master_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq '.object.sha')"
+          if [[ "$master_sha" != "$GITHUB_SHA" ]]; then
+            echo "Skipping stale run: master has moved from $GITHUB_SHA to $master_sha"
+            exit 0
+          fi
+
+          # An existing release is immutable; bump manifest.json for a new release.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists. No asset overwrite; bump manifest version for a new release."
+            exit 0
+          fi
+
+          # An orphan tag can be reused only when it points at this exact commit.
+          if tag_ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" 2>/dev/null)"; then
+            tag_sha="$(jq -r '.object.sha' <<< "$tag_ref")"
+            tag_type="$(jq -r '.object.type' <<< "$tag_ref")"
+            if [[ "$tag_type" == "tag" ]]; then
+              tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')"
+            fi
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $tag already points at $tag_sha, not $GITHUB_SHA. Refusing to republish."
+              exit 1
+            fi
+          fi
+
+          cat > dist/RELEASE_NOTES.md <<EOF
+          TurnShade $tag: Chrome extension for turn-taking in split-screen ChatGPT conversations.
+
+          - Shades the ChatGPT pane that just sent a message.
+          - Unshades the other pane so the next turn is clear.
+          - Includes a popup for manual shading, pairing diagnostics, and reset.
+          - Includes the TurnShade icons.
+
+          Install: download **turnshade-$tag.zip** from Assets, extract it, and load the extracted directory via chrome://extensions (Developer mode -> Load unpacked). Reload both ChatGPT tabs.
+
+          SHA-256 is provided as a separate .sha256 release asset.
+          EOF
+
+          gh release create "$tag" "$zip" "$zip.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TurnShade $tag" \
+            --notes-file dist/RELEASE_NOTES.md
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq '.url'

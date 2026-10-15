@@ -12,6 +12,13 @@ Chrome標準の **Split View（左右に並べたChatGPTの2画面）** 用拡�
 
 グレー表示はクリックを遮りません。灰色画面でもスクロール、コピー、クリック可能です。
 
+## 正式リリースパッケージ
+
+最新版は [GitHub Releases](https://github.com/yohi/turnshade/releases/latest) の **Assets** にある `turnshade-vX.Y.Z.zip` をダウンロードしてください（GitHubが自動生成する **Source code (zip)** ではありません）。
+
+`master` へのpush時にCIでJavaScript構文と単体テストを検証し、拡張本体8ファイルだけをZIP化します。`manifest.json` の `version` に対応する `vX.Y.Z` タグが未発行の場合のみ、GitHub ReleaseとSHA-256チェックサムを自動作成します。同じバージョンのReleaseは上書きしません。**次の配布時は `manifest.json` のバージョンを更新してください。**
+
+
 ## 重要: v1.0.0からの更新
 
 v1.0.0はペア認識失敗・送信検出失敗が画面に出ず、何も変化しないままになりました。
@@ -29,7 +36,7 @@ v1.0.0はペア認識失敗・送信検出失敗が画面に出ず、何も変�
 1. Chromeのアドレスバーに `chrome://extensions` を入力。
 2. 旧版 `ChatGPT Split Turn Shade` v1.0.0 があれば**削除**（またはOFFにする）。
 3. ZIPを解凍する。
-4. **デベロッパー モード** をON → **パッケージ化されていない拡張機能を読み込む** → 今回の `chatgpt-split-turn-shade-v1.1.0` フォルダーを選択。
+4. **デベロッパー モード** をON → **パッケージ化されていない拡張機能を読み込む** → 解凍した拡張フォルダー（直下に `manifest.json` がある場所）を選択。
 5. Split Viewの**左右両方のChatGPTを再読み込み**する。これは必須です。
 6. ChatGPT側で1通送信して確認。
 
