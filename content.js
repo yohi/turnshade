@@ -4,18 +4,33 @@
   if (window !== window.top || window.__splitTurnShadeV11Loaded) return;
   window.__splitTurnShadeV11Loaded = true;
 
-  const MESSAGE_SELECTOR = '[data-message-author-role="user"]';
-  const EDITOR_SELECTOR = '#prompt-textarea, [data-testid="composer-input"], [contenteditable="true"][role="textbox"]';
-  const SEND_SELECTOR = [
-    'button[data-testid="send-button"]',
-    'button[data-testid="composer-submit-button"]',
-    'button[data-testid*="send"]',
-    'button[aria-label="Send prompt"]',
-    'button[aria-label="Send message"]',
-    'button[aria-label="送信"]',
-    'button[aria-label="プロンプトを送信"]',
-    'form button[type="submit"]'
-  ].join(',');
+  // Gemini and ChatGPT have different DOM structures; never count assistant output as a send.
+  // These are heuristic selectors, not official Google/OpenAI APIs.
+  const PROVIDER = location.hostname === 'gemini.google.com' ? 'gemini' : 'chatgpt';
+  const MESSAGE_SELECTOR = PROVIDER === 'gemini'
+    ? 'user-query, [data-test-id="user-query"], [data-message-author="user"]'
+    : '[data-message-author-role="user"]';
+  const EDITOR_SELECTOR = PROVIDER === 'gemini'
+    ? 'rich-textarea .ql-editor[contenteditable="true"], rich-textarea [contenteditable="true"], .ql-editor[contenteditable="true"], input-area-v2 [contenteditable="true"], input-area-v2 textarea'
+    : '#prompt-textarea, [data-testid="composer-input"], [contenteditable="true"][role="textbox"]';
+  const SEND_SELECTOR = PROVIDER === 'gemini'
+    ? [
+      'input-area-v2 button.send-button',
+      'button.send-button',
+      'input-area-v2 button[aria-label="Send message"]',
+      'input-area-v2 button[aria-label="送信"]',
+      'button[aria-label="Send message"]'
+    ].join(',')
+    : [
+      'button[data-testid="send-button"]',
+      'button[data-testid="composer-submit-button"]',
+      'button[data-testid*="send"]',
+      'button[aria-label="Send prompt"]',
+      'button[aria-label="Send message"]',
+      'button[aria-label="送信"]',
+      'button[aria-label="プロンプトを送信"]',
+      'form button[type="submit"]'
+    ].join(',');
   const TIMEOUT_MS = 20000;
   const ROUTE_GUARD_MS = 1800;
   let pageHref = location.href;
@@ -93,7 +108,7 @@
     lastEvent = trigger;
     pending = {before:capture(), trigger, timer:null, started:Date.now(), editorBefore:editorLength()};
     pending.timer = setTimeout(clearPending, TIMEOUT_MS);
-    // Some ChatGPT UI revisions omit the usual user-message selector.
+    // Provider DOM revisions can omit the usual user-message selector.
     // A genuine composer clear after an explicit send action is a secondary signal.
     setTimeout(scheduleCheck, 700);
     scheduleCheck();
@@ -161,8 +176,11 @@
     if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
     if (button.matches(SEND_SELECTOR)) return true;
     const label = `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''}`;
-    return /^(?:send|submit|送信)/i.test(label.trim()) &&
-      Boolean(button.closest('form, [data-testid*="composer"], #thread-bottom-container'));
+    const composer = PROVIDER === 'gemini'
+      ? 'input-area-v2, .input-area-container, form'
+      : 'form, [data-testid*="composer"], #thread-bottom-container';
+    return /^(?:send|submit|送信|送る)/i.test(label.trim()) &&
+      Boolean(button.closest(composer));
   }
 
   document.addEventListener('pointerdown', event => {
@@ -195,7 +213,7 @@
     if (message?.type === 'STS_DIAGNOSTICS') {
       const s = capture();
       sendResponse({
-        loaded:true, shaded, userMessages:s.count,
+        loaded:true, provider:PROVIDER, shaded, userMessages:s.count,
         editorDetected:Boolean(document.querySelector(EDITOR_SELECTOR)),
         sendButtonDetected:Boolean(document.querySelector(SEND_SELECTOR)),
         lastEvent, lastSentAt, lastTransport, pending:Boolean(pending)

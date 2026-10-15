@@ -9,13 +9,15 @@ const WORKER = fs.readFileSync(path.join(__dirname, '..', 'service-worker.js'), 
 function mock() {
   const tabs = new Map([
     [1,{id:1,windowId:10,splitViewId:42,url:'https://chatgpt.com/c/a'}],
-    [2,{id:2,windowId:10,splitViewId:42,url:'https://chatgpt.com/c/b'}],
-    [3,{id:3,windowId:10,splitViewId:43,url:'https://chatgpt.com/c/c'}],
-    [4,{id:4,windowId:10,splitViewId:43,url:'https://chatgpt.com/c/d'}],
+    [2,{id:2,windowId:10,splitViewId:42,url:'https://gemini.google.com/app/c/b'}],
+    [3,{id:3,windowId:10,splitViewId:43,url:'https://gemini.google.com/app/c/c'}],
+    [4,{id:4,windowId:10,splitViewId:43,url:'https://gemini.google.com/app/c/d'}],
     [5,{id:5,windowId:11,splitViewId:-1,url:'https://chatgpt.com/c/e'}],
-    [6,{id:6,windowId:11,splitViewId:-1,url:'https://chatgpt.com/c/f'}],
+    [6,{id:6,windowId:11,splitViewId:-1,url:'https://gemini.google.com/app/c/f'}],
     [7,{id:7,windowId:12,splitViewId:-1,url:'https://chatgpt.com/'}],
-    [8,{id:8,windowId:12,splitViewId:-1,url:'https://example.org'}]
+    [8,{id:8,windowId:12,splitViewId:-1,url:'https://example.org'}],
+    [9,{id:9,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/g'}],
+    [10,{id:10,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/h'}]
   ]);
   const messages=[]; const handlers={}; const session={}; const local={};
   const event = name => ({addListener(fn){handlers[name]=fn;}});
@@ -105,4 +107,48 @@ test('navigation away clears pair and overlay',async()=>{
 test('concurrent sends maintain last received event state',async()=>{
   const m=mock();await Promise.all([m.msg('STS_SENT',1),m.msg('STS_SENT',2)]);
   assert.equal(lastShade(m,1),false); assert.equal(lastShade(m,2),true);
+});
+
+test('mixed ChatGPT x Gemini pair is bidirectional, reports provider metadata',async()=>{
+  const m=mock();
+  let status=await m.msg('STS_GET_STATUS',1,{popup:true});
+  assert.equal(status.provider,'chatgpt');assert.equal(status.partnerProvider,'gemini');
+  assert.equal((await m.msg('STS_SENT',1)).applied,true);
+  assert.equal(lastShade(m,1),true);assert.equal(lastShade(m,2),false);
+  assert.equal((await m.msg('STS_SENT',2)).applied,true);
+  assert.equal(lastShade(m,1),false);assert.equal(lastShade(m,2),true);
+  status=await m.msg('STS_GET_STATUS',2,{popup:true});
+  assert.equal(status.provider,'gemini');assert.equal(status.partnerProvider,'chatgpt');
+});
+test('native Split Gemini x Gemini remains isolated from other pairs',async()=>{
+  const m=mock();
+  assert.equal((await m.msg('STS_SENT',3)).applied,true);
+  assert.equal(lastShade(m,3),true);assert.equal(lastShade(m,4),false);
+  assert.equal(m.messages.some(x=>[1,2].includes(x.id)),false);
+  assert.equal((await m.msg('STS_SENT',4)).applied,true);
+  assert.equal(lastShade(m,3),false);assert.equal(lastShade(m,4),true);
+});
+test('fallback supports mixed providers and excludes unsupported domains',async()=>{
+  const m=mock();
+  await m.msg('STS_SET_FALLBACK',undefined,{popup:true,value:true});
+  assert.equal((await m.msg('STS_SENT',6)).applied,true);
+  assert.equal(lastShade(m,6),true);assert.equal(lastShade(m,5),false);
+  m.tabs.get(5).url='https://gemini.google.com.attacker.invalid/app';
+  m.handlers.updated(5,{url:m.tabs.get(5).url});
+  assert.equal((await m.msg('STS_SENT',6)).applied,false);
+  assert.equal((await m.msg('STS_GET_STATUS',5,{popup:true})).validTab,false);
+});
+test('other windows and non-HTTPS Gemini-lookalikes are rejected',async()=>{
+  const m=mock();
+  m.tabs.get(7).url='http://gemini.google.com/app';
+  assert.equal((await m.msg('STS_SENT',7)).unhandled,true);
+  assert.equal((await m.msg('STS_GET_STATUS',7,{popup:true})).provider,null);
+});
+
+test('original ChatGPT x ChatGPT split regression remains working',async()=>{
+  const m=mock();
+  assert.equal((await m.msg('STS_SENT',9)).applied,true);
+  assert.equal(lastShade(m,9),true);assert.equal(lastShade(m,10),false);
+  assert.equal((await m.msg('STS_SENT',10)).applied,true);
+  assert.equal(lastShade(m,9),false);assert.equal(lastShade(m,10),true);
 });

@@ -1,6 +1,6 @@
 'use strict';
 
-// Only metadata is stored. No ChatGPT message contents, cookies or tokens.
+// Only tab/pair metadata is stored. No ChatGPT or Gemini message contents, cookies or tokens.
 const STATES_KEY = 'splitTurnShadeStatesV2';
 const OPTIONS_KEY = 'splitTurnShadeOptionsV2';
 const SPLIT_NONE = chrome.tabs.SPLIT_VIEW_ID_NONE ?? -1;
@@ -16,12 +16,16 @@ function enqueue(work) {
   return result;
 }
 
-function isChatGptUrl(url) {
+function providerFromUrl(url) {
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && (u.hostname === 'chatgpt.com' || u.hostname === 'chat.openai.com');
-  } catch { return false; }
+    if (u.protocol !== 'https:') return null;
+    if (u.hostname === 'chatgpt.com' || u.hostname === 'chat.openai.com') return 'chatgpt';
+    if (u.hostname === 'gemini.google.com') return 'gemini';
+  } catch { /* No provider for unsupported URLs. */ }
+  return null;
 }
+function isSupportedUrl(url) { return providerFromUrl(url) !== null; }
 function isSplitId(id) { return Number.isInteger(id) && id !== SPLIT_NONE; }
 function isSamePair(a, b) {
   return Boolean(a && b && a.tabIds?.length === 2 && b.tabIds?.length === 2 &&
@@ -34,11 +38,11 @@ async function readOptions() { return (await chrome.storage.local.get(OPTIONS_KE
 // Native Chrome Split View is preferred; manual fallback requires user opt-in.
 async function getPair(tabId) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
-  if (!tab || !isChatGptUrl(tab.url)) return null;
+  if (!tab || !isSupportedUrl(tab.url)) return null;
   const nearby = await chrome.tabs.query({ windowId: tab.windowId });
   if (isSplitId(tab.splitViewId)) {
     const members = nearby.filter(t => t.splitViewId === tab.splitViewId);
-    if (members.length === 2 && members.every(t => isChatGptUrl(t.url))) {
+    if (members.length === 2 && members.every(t => isSupportedUrl(t.url))) {
       return {
         key: `split:${tab.windowId}:${tab.splitViewId}`,
         source: 'split', windowId: tab.windowId, splitViewId: tab.splitViewId,
@@ -48,7 +52,7 @@ async function getPair(tabId) {
   }
   const options = await readOptions();
   if (options.twoTabFallback) {
-    const members = nearby.filter(t => isChatGptUrl(t.url) && !isSplitId(t.splitViewId));
+    const members = nearby.filter(t => isSupportedUrl(t.url) && !isSplitId(t.splitViewId));
     if (members.length === 2 && members.some(t => t.id === tabId)) {
       return {
         key: `fallback:${tab.windowId}`, source: 'fallback', windowId: tab.windowId,
@@ -109,11 +113,13 @@ async function getStatus(tabId) {
   const options = await readOptions();
   const record = pair && states[pair.key];
   let page = null;
-  if (tab && isChatGptUrl(tab.url)) {
+  if (tab && isSupportedUrl(tab.url)) {
     page = await chrome.tabs.sendMessage(tabId, {type:'STS_DIAGNOSTICS'}).catch(() => null);
   }
   return {
-    validTab: Boolean(tab && isChatGptUrl(tab.url)),
+    validTab: Boolean(tab && isSupportedUrl(tab.url)),
+    provider: providerFromUrl(tab?.url),
+    partnerProvider: providerFromUrl(pair && (await chrome.tabs.get(pair.tabIds.find(id => id !== tabId)).catch(() => null))?.url),
     tabId,
     chromeSplitId: tab?.splitViewId ?? null,
     paired: Boolean(pair),
@@ -151,12 +157,12 @@ async function pruneInvalidPairs() {
   for (const [key, record] of Object.entries(states)) {
     const [a,b] = (record.tabIds ?? []).map(id => byId.get(id));
     const core = a && b && a.id !== b.id && a.windowId === b.windowId &&
-      a.windowId === record.windowId && isChatGptUrl(a.url) && isChatGptUrl(b.url);
+      a.windowId === record.windowId && isSupportedUrl(a.url) && isSupportedUrl(b.url);
     const valid = Boolean(core && (record.source === 'split'
       ? isSplitId(a.splitViewId) && a.splitViewId === b.splitViewId &&
         key === `split:${a.windowId}:${a.splitViewId}`
       : options.twoTabFallback && !isSplitId(a.splitViewId) && !isSplitId(b.splitViewId) &&
-        allTabs.filter(t=>t.windowId === a.windowId && isChatGptUrl(t.url) && !isSplitId(t.splitViewId)).length === 2 &&
+        allTabs.filter(t=>t.windowId === a.windowId && isSupportedUrl(t.url) && !isSplitId(t.splitViewId)).length === 2 &&
         key === `fallback:${a.windowId}`));
     if (!valid) {
       delete states[key]; modified = true;
@@ -169,7 +175,7 @@ async function pruneInvalidPairs() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
-  const isPage = Boolean(sender.tab?.id && isChatGptUrl(sender.tab?.url));
+  const isPage = Boolean(sender.tab?.id && isSupportedUrl(sender.tab?.url));
   const isExtension = sender.id === chrome.runtime.id && !sender.tab;
   let action;
   if (isPage && message.type === 'STS_SYNC') action = () => onSync(sender.tab.id);

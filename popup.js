@@ -17,7 +17,7 @@ async function refresh() {
     if (!r.ok) throw Error(r.error || '状態取得に失敗');
     $('fallback').checked = r.twoTabFallback;
     if (!r.validTab) {
-      $('status').textContent = 'このタブはChatGPTではありません。ChatGPTの画面を選んでください。';
+      $('status').textContent = 'このタブは対象外です。ChatGPTまたはGeminiの画面を選んでください。';
       return;
     }
     const pair = r.paired ? `認識済み (${r.source === 'split' ? 'Chrome標準Split View' : '通常タブ2枚'})` : '未認識';
@@ -25,6 +25,7 @@ async function refresh() {
     const detail = r.page || {};
     $('status').textContent = [
       `ペア: ${pair}`,
+      `プロバイダー: ${r.provider ?? '不明'} / 相手: ${r.partnerProvider ?? '不明'}`,
       `Chrome Split ID: ${r.chromeSplitId ?? 'なし'}`,
       `相手タブ: ${r.partnerTabId ?? '未特定'}`,
       `拡張のページ監視: ${doc}`,
