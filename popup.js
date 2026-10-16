@@ -16,6 +16,7 @@ async function refresh() {
     const r = await message({type:'STS_GET_STATUS',tabId:selectedTabId});
     if (!r.ok) throw Error(r.error || '状態取得に失敗');
     $('fallback').checked = r.twoTabFallback;
+    $('reverse').checked = r.reverseArrows;
     if (!r.validTab) {
       $('status').textContent = 'このタブは対象外です。ChatGPTまたはGeminiの画面を選んでください。';
       return;
@@ -34,7 +35,8 @@ async function refresh() {
       `直近の検出: ${detail.lastEvent ?? 'なし'}`,
       `反映結果: ${detail.lastTransport ?? '不明'}`,
       `最後の送信: ${timestamp(detail.lastSentAt)}`,
-      `グレー表示: ${detail.shaded ? 'ON' : 'OFF'}`,
+      `赤枠表示: ${detail.shaded ? 'ON' : 'OFF'}`,
+      `矢印の向き: ${detail.shaded ? (detail.arrowDirection === 'right' ? '→' : detail.arrowDirection === 'left' ? '←' : '判定不可') : '非表示'}`, 
     ].join('\n');
   } catch (e) { $('status').textContent = `エラー: ${String(e)}`; }
 }
@@ -53,6 +55,14 @@ async function run(action) {
 $('test').addEventListener('click',()=>run('STS_MANUAL_SHADE'));
 $('reset').addEventListener('click',()=>run('STS_RESET'));
 $('refresh').addEventListener('click',refresh);
+$('reverse').addEventListener('change', async event => {
+  $('feedback').textContent = '';
+  try {
+    const r = await message({type:'STS_SET_REVERSE_ARROWS',value:event.target.checked});
+    if (!r?.ok) throw Error(r?.error || '左右の反転設定を保存できません');
+    await refresh();
+  } catch (e) { $('feedback').textContent = String(e); }
+});
 $('fallback').addEventListener('change',async event=>{
   $('feedback').textContent = '';
   try {

@@ -3,7 +3,7 @@
   "name": "TurnShade",
   "short_name": "TurnShade",
   "version": "1.3.0",
-  "description": "Chrome標準Split ViewでChatGPTとGeminiの送信済み側をグレー表示し、次のターンを示します。",
+  "description": "Chrome標準Split Viewで送信済み側を赤枠で示し、次に送信する方向を矢印で案内します。",
   "minimum_chrome_version": "140",
   "permissions": [
     "storage"
