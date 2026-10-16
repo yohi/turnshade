@@ -8,16 +8,16 @@ const WORKER = fs.readFileSync(path.join(__dirname, '..', 'service-worker.js'), 
 
 function mock() {
   const tabs = new Map([
-    [1,{id:1,windowId:10,splitViewId:42,url:'https://chatgpt.com/c/a'}],
-    [2,{id:2,windowId:10,splitViewId:42,url:'https://gemini.google.com/app/c/b'}],
-    [3,{id:3,windowId:10,splitViewId:43,url:'https://gemini.google.com/app/c/c'}],
-    [4,{id:4,windowId:10,splitViewId:43,url:'https://gemini.google.com/app/c/d'}],
-    [5,{id:5,windowId:11,splitViewId:-1,url:'https://chatgpt.com/c/e'}],
-    [6,{id:6,windowId:11,splitViewId:-1,url:'https://gemini.google.com/app/c/f'}],
-    [7,{id:7,windowId:12,splitViewId:-1,url:'https://chatgpt.com/'}],
-    [8,{id:8,windowId:12,splitViewId:-1,url:'https://example.org'}],
-    [9,{id:9,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/g'}],
-    [10,{id:10,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/h'}]
+    [1,{id:1,index:0,windowId:10,splitViewId:42,url:'https://chatgpt.com/c/a'}],
+    [2,{id:2,index:1,windowId:10,splitViewId:42,url:'https://gemini.google.com/app/c/b'}],
+    [3,{id:3,index:2,windowId:10,splitViewId:43,url:'https://gemini.google.com/app/c/c'}],
+    [4,{id:4,index:3,windowId:10,splitViewId:43,url:'https://gemini.google.com/app/c/d'}],
+    [5,{id:5,index:0,windowId:11,splitViewId:-1,url:'https://chatgpt.com/c/e'}],
+    [6,{id:6,index:1,windowId:11,splitViewId:-1,url:'https://gemini.google.com/app/c/f'}],
+    [7,{id:7,index:0,windowId:12,splitViewId:-1,url:'https://chatgpt.com/'}],
+    [8,{id:8,index:1,windowId:12,splitViewId:-1,url:'https://example.org'}],
+    [9,{id:9,index:0,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/g'}],
+    [10,{id:10,index:1,windowId:13,splitViewId:44,url:'https://chatgpt.com/c/h'}]
   ]);
   const messages=[]; const handlers={}; const session={}; const local={};
   const event = name => ({addListener(fn){handlers[name]=fn;}});
@@ -27,7 +27,7 @@ function mock() {
       async get(id) {if (!tabs.has(id)) throw Error('not found');return {...tabs.get(id)};},
       async query(q) {return [...tabs.values()].filter(t=>q.windowId===undefined || q.windowId===t.windowId).map(t=>({...t}));},
       async sendMessage(id,message){messages.push({id,...message});return message.type==='STS_DIAGNOSTICS'?{loaded:true,shaded:false}:undefined;},
-      onUpdated:event('updated'),onRemoved:event('removed'),onDetached:event('detached')
+      onUpdated:event('updated'),onMoved:event('moved'),onRemoved:event('removed'),onDetached:event('detached')
     },
     storage: {
       session:{async get(k){return {[k]:structuredClone(session[k])};},async set(o){Object.assign(session,structuredClone(o));}},
@@ -47,6 +47,7 @@ function mock() {
   return {tabs, messages, handlers, session, local, msg};
 }
 function lastShade(m,id){return m.messages.filter(x=>x.id===id && x.type==='STS_SET_SHADE').at(-1)?.shaded;}
+function lastDirection(m,id){return m.messages.filter(x=>x.id===id && x.type==='STS_SET_SHADE').at(-1)?.direction;}
 
 test('native Split: left/right send toggles both sides',async()=>{
   const m=mock();
@@ -151,4 +152,46 @@ test('original ChatGPT x ChatGPT split regression remains working',async()=>{
   assert.equal(lastShade(m,9),true);assert.equal(lastShade(m,10),false);
   assert.equal((await m.msg('STS_SENT',10)).applied,true);
   assert.equal(lastShade(m,9),false);assert.equal(lastShade(m,10),true);
+});
+
+test('red border arrow points from last sender toward the opposite pane', async () => {
+  const m = mock();
+  await m.msg('STS_SENT', 1);
+  assert.equal(lastShade(m, 1), true);
+  assert.equal(lastDirection(m, 1), 'right');
+  assert.equal(lastShade(m, 2), false);
+  await m.msg('STS_SENT', 2);
+  assert.equal(lastShade(m, 1), false);
+  assert.equal(lastShade(m, 2), true);
+  assert.equal(lastDirection(m, 2), 'left');
+});
+
+test('reverse arrows toggles immediately without changing the sent pane or fallback option', async () => {
+  const m = mock();
+  await m.msg('STS_SET_FALLBACK', undefined, {popup:true, value:true});
+  await m.msg('STS_SENT', 2);
+  assert.equal(lastDirection(m, 2), 'left');
+  await m.msg('STS_SET_REVERSE_ARROWS', undefined, {popup:true, value:true});
+  assert.equal(lastShade(m, 2), true);
+  assert.equal(lastDirection(m, 2), 'right');
+  assert.equal(m.local.splitTurnShadeOptionsV2.twoTabFallback, true);
+  assert.equal(m.local.splitTurnShadeOptionsV2.reverseArrows, true);
+  const status = await m.msg('STS_GET_STATUS', 2, {popup:true});
+  assert.equal(status.reverseArrows, true);
+  await m.msg('STS_SET_REVERSE_ARROWS', undefined, {popup:true, value:false});
+  assert.equal(lastDirection(m, 2), 'left');
+});
+
+test('native split index changes refresh arrows; fallback remains direction-free', async () => {
+  const m = mock();
+  await m.msg('STS_SENT', 1);
+  m.tabs.get(1).index = 2;
+  m.tabs.get(2).index = 1;
+  m.handlers.moved(1, {windowId:10, fromIndex:0, toIndex:2});
+  await m.msg('STS_GET_STATUS', 1, {popup:true});
+  assert.equal(lastDirection(m, 1), 'left');
+  await m.msg('STS_SET_FALLBACK', undefined, {popup:true, value:true});
+  await m.msg('STS_SENT', 5);
+  assert.equal(lastShade(m, 5), true);
+  assert.equal(lastDirection(m, 5), 'unknown');
 });
