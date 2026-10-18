@@ -51,7 +51,7 @@ if len(blob) < 16 or blob[:4] != b"Cr24":
 version, header_len = struct.unpack_from("<II", blob, 4)
 if version != 3 or not 0 < header_len < len(blob) - 12:
     raise SystemExit("Not a valid CRX3 container header")
-print(f"Validated CRX3 container header (${len(blob)} bytes)")
+print(f"Validated CRX3 container header ({len(blob)} bytes)")
 PY
 
 cp -- "$generated" "$output/$name"
