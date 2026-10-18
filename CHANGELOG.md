@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0](https://github.com/yohi/turnshade/compare/v1.4.0...v1.5.0) (2026-10-18)
+
+
+### Features
+
+* add manual secret-backed CRX3 signing for published releases ([cbeda46](https://github.com/yohi/turnshade/commit/cbeda46f2b0d1b6bcba827dad84bc58a5c0a9f6e))
+* build pinned-ID Chrome update XML and atomic Pages CRX site ([5584805](https://github.com/yohi/turnshade/commit/5584805daef37c83b59df36c107a74b72638797b))
+* package verified release ZIP as signed CRX3 using Chrome ([de41e04](https://github.com/yohi/turnshade/commit/de41e04b308cb5cf950f19b02de1b52b1a0a7e1c))
+* reusable signed release to atomic Pages update deployment ([a0a8691](https://github.com/yohi/turnshade/commit/a0a869196ea905253c7b7184884155b987edea00))
+* self-host signed CRX3 via GitHub Releases + Pages auto-update ([5146308](https://github.com/yohi/turnshade/commit/5146308bcd5936d52474a3941c34a947bd1b7ce9))
+* set Chrome self-hosted update URL to GitHub Pages ([de408f3](https://github.com/yohi/turnshade/commit/de408f3fd8072441e501d540ce33bf8565153757))
+* validate and allowlist release ZIP before CRX signing ([27b6c80](https://github.com/yohi/turnshade/commit/27b6c808654c48f6bbcc8bb73b0c2c865e683a91))
+
+
+### Bug Fixes
+
+* correct CRX3 size diagnostic ([7ddde22](https://github.com/yohi/turnshade/commit/7ddde22209b283f9f35d8d02774ba8c479c3c4eb))
+* disallow signing releases without self-hosted update URL ([11bd76e](https://github.com/yohi/turnshade/commit/11bd76ea5a24bad4ff433f5b040da9c15d796ad0))
+
 ## [1.4.0](https://github.com/yohi/turnshade/compare/v1.3.0...v1.4.0) (2026-10-18)
 
 
