@@ -25,14 +25,27 @@ class InstallerTest(unittest.TestCase):
         script = (ROOT / "scripts/install.sh").read_text()
         self.assertEqual(script.count("__TURNSHADE_EXTENSION_ID__"), 1)
         script = script.replace("__TURNSHADE_EXTENSION_ID__", EXTENSION_ID)
+        self.binaries = {
+            "stable": self.root / "chrome-stable",
+            "beta": self.root / "chrome-beta",
+            "dev": self.root / "chrome-dev",
+        }
+        for browser in self.binaries.values():
+            browser.write_text("#!/bin/sh\\nexit 0\\n")
+            browser.chmod(0o755)
         for original, local in (
             ("CHANNEL_DIR='/opt/google/chrome/extensions'", f"CHANNEL_DIR='{self.directory}'"),
             ("CHANNEL_DIR='/opt/google/chrome-beta/extensions'", f"CHANNEL_DIR='{self.beta}'"),
             ("CHANNEL_DIR='/opt/google/chrome-unstable/extensions'", f"CHANNEL_DIR='{self.dev}'"),
+            ("BROWSER_BINARY='/opt/google/chrome/chrome'", f"BROWSER_BINARY='{self.binaries['stable']}'"),
+            ("BROWSER_BINARY='/opt/google/chrome-beta/chrome'", f"BROWSER_BINARY='{self.binaries['beta']}'"),
+            ("BROWSER_BINARY='/opt/google/chrome-unstable/chrome'", f"BROWSER_BINARY='{self.binaries['dev']}'"),
             ("SHARED_DIR='/usr/share/google-chrome/extensions'", f"SHARED_DIR='{self.alternate}'"),
         ):
             self.assertIn(original, script)
             script = script.replace(original, local)
+        self.assertIn("main() {", script)
+        self.assertTrue(script.endswith('main "$@"\\n'))
         self.script = self.root / "install.sh"
         self.script.write_text(script)
 
@@ -160,6 +173,36 @@ class InstallerTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Unsupported Chrome channel", result.stderr)
         self.assertFalse(self.target().exists())
+
+    def test_missing_channel_binary_rejects_path_wrappers(self):
+        # PATH contains a fake google-chrome-beta, but no actual selected binary.
+        self.binaries["beta"].unlink()
+        result = self.run_installer("--channel=beta")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Google Chrome beta is not installed", result.stderr)
+        self.assertFalse(self.target("beta").exists())
+
+    def test_non_executable_channel_binary_rejected(self):
+        self.binaries["stable"].chmod(0o644)
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.target().exists())
+
+    def test_truncated_piped_script_does_not_create_registration(self):
+        script = self.script.read_text()
+        # Full main body is not parsed in these prefixes; no installer actions run.
+        cut_points = [
+            script.index("# Never run a network script"),
+            script.index('  sudo install -d -m 755 "$INSTALL_DIR"'),
+            script.index('\n}\n\nmain "$@"'),
+        ]
+        for cut in cut_points:
+            with self.subTest(cut=cut):
+                result = subprocess.run(["sh"], input=script[:cut], env=self.env,
+                                        capture_output=True, text=True)
+                self.assertFalse(self.target().exists())
+                self.assertFalse(self.target("beta").exists())
+                self.assertFalse(self.target("dev").exists())
 
     def test_rejects_other_extension_id_before_writing(self):
         self.xml.write_text(self.make_xml(ext_id="a" * 32))
