@@ -110,24 +110,17 @@ def build_site(crx: Path, key: Path | None, manifest_path: Path,
     if manifest.get("update_url") != UPDATE_URL:
         raise ValueError("Signed CRX must contain the pinned update_url")
 
-    blob = crx.read_bytes()
+    # Check the structurally parsed CRX3 RSA proof in both signing paths.
+    # This verifies key identity, not the cryptographic signature itself.
+    extension_id, crx_public_der = extension_id_from_crx(crx.read_bytes())
+    if extension_id != expected_id:
+        raise ValueError("CRX extension ID differs from pinned extension ID")
     if key is not None:
-        extension_id, public_der = extension_id_from_key(key)
-        if extension_id != expected_id:
+        signing_id, signing_public_der = extension_id_from_key(key)
+        if signing_id != expected_id or signing_id != extension_id:
             raise ValueError("Signing key changed the pinned extension ID")
-        if len(blob) < 16 or blob[:4] != b"Cr24":
-            raise ValueError("Not a CRX container")
-        crx_version, header_size = struct.unpack_from("<II", blob, 4)
-        if crx_version != 3 or not 0 < header_size <= len(blob) - 13:
-            raise ValueError("Invalid CRX3 header")
-        if public_der not in blob[12:12 + header_size]:
-            raise ValueError("CRX public key differs from pinned signing key")
-    else:
-        # Existing Release assets are separately checked against their published
-        # SHA-256. This verifies the embedded key identity, not the signature.
-        extension_id, _ = extension_id_from_crx(blob)
-        if extension_id != expected_id:
-            raise ValueError("Existing CRX changed the pinned extension ID")
+        if signing_public_der != crx_public_der:
+            raise ValueError("CRX public key differs from provided signing key")
 
     template = Path(__file__).with_name("install.sh").read_text(encoding="utf-8")
     token = "__TURNSHADE_EXTENSION_ID__"
