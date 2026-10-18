@@ -14,6 +14,24 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 
+def field(number: int, data: bytes) -> bytes:
+    """Encode a length-delimited CRX3 protobuf field for test fixtures."""
+    def varint(value: int) -> bytes:
+        encoded = bytearray()
+        while value >= 128:
+            encoded.append((value & 127) | 128)
+            value >>= 7
+        encoded.append(value)
+        return bytes(encoded)
+
+    return varint((number << 3) | 2) + varint(len(data)) + data
+
+
+def crx3_with_rsa_proof(der: bytes, *other_header_fields: bytes) -> bytes:
+    header = field(2, field(1, der)) + b"".join(other_header_fields)
+    return b"Cr24" + struct.pack("<II", 3, len(header)) + header + b"mock content"
+
+
 class PagesReleaseTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -23,8 +41,8 @@ class PagesReleaseTest(unittest.TestCase):
         subprocess.run(["openssl", "genrsa", "-out", str(self.key), "2048"], check=True, capture_output=True)
         self.extension_id, self.der = module.extension_id_from_key(self.key)
         self.crx = self.root / "turnshade-v1.5.0.crx"
-        # Header-only fixture; not intended to be a valid signed CRX payload.
-        self.crx.write_bytes(b"Cr24" + struct.pack("<II", 3, len(self.der)) + self.der + b"mock content")
+        # Structurally valid CRX3 proof fixture; signature and payload are mock data.
+        self.crx.write_bytes(crx3_with_rsa_proof(self.der))
         self.manifest = self.root / "manifest.json"
         self.manifest.write_text(json.dumps({
             "version": "1.5.0",
@@ -55,40 +73,35 @@ class PagesReleaseTest(unittest.TestCase):
 
 
     def test_existing_crx_public_key_identity_without_private_key(self):
-        # CRX3 protobuf AsymmetricKeyProof with RSA key (field 2, nested field 1).
-        def field(number, data):
-            def v(n):
-                out = bytearray()
-                while n >= 128:
-                    out.append((n & 127) | 128)
-                    n >>= 7
-                out.append(n)
-                return bytes(out)
-            return v((number << 3) | 2) + v(len(data)) + data
-        proof = field(1, self.der)
-        header = field(2, proof)
-        self.crx.write_bytes(b"Cr24" + struct.pack("<II", 3, len(header))
-                             + header + b"mock content")
         module.build_site(self.crx, None, self.manifest, "v1.5.0",
                           self.extension_id, self.dest)
         self.assertIn("external_update_url", (self.dest / "install.sh").read_text())
 
     def test_existing_crx_rejects_wrong_key(self):
-        def varint(n):
-            out = bytearray()
-            while n >= 128:
-                out.append((n & 127) | 128)
-                n >>= 7
-            out.append(n)
-            return bytes(out)
-        def field(i, value):
-            return varint(i << 3 | 2) + varint(len(value)) + value
-        header = field(2, field(1, b"not-the-owner-key"))
-        self.crx.write_bytes(b"Cr24" + struct.pack("<II", 3, len(header))
-                             + header + b"payload")
+        self.crx.write_bytes(crx3_with_rsa_proof(b"not-the-owner-key"))
         with self.assertRaisesRegex(ValueError, "pinned extension ID"):
             module.build_site(self.crx, None, self.manifest, "v1.5.0",
                               self.extension_id, self.dest)
+
+    def test_signing_path_rejects_der_outside_rsa_proof(self):
+        # Old substring search accepted the DER in an unrelated header field.
+        header = field(9, self.der) + field(2, field(1, b"wrong-rsa-public-key"))
+        self.crx.write_bytes(
+            b"Cr24" + struct.pack("<II", 3, len(header)) + header + b"mock content"
+        )
+        self.assertIn(self.der, header)
+        with self.assertRaisesRegex(ValueError, "pinned extension ID"):
+            self.publish()
+        self.assertFalse(self.dest.exists())
+
+    def test_signing_path_rejects_header_without_rsa_proof(self):
+        header = field(9, self.der)
+        self.crx.write_bytes(
+            b"Cr24" + struct.pack("<II", 3, len(header)) + header + b"mock content"
+        )
+        with self.assertRaisesRegex(ValueError, "exactly one CRX3 RSA public key"):
+            self.publish()
+        self.assertFalse(self.dest.exists())
 
     def test_rejects_wrong_extension_id(self):
         wrong = ("a" if self.extension_id[0] != "a" else "b") + self.extension_id[1:]
@@ -102,8 +115,8 @@ class PagesReleaseTest(unittest.TestCase):
             self.publish()
 
     def test_rejects_crx_signed_by_different_key(self):
-        self.crx.write_bytes(b"Cr24" + struct.pack("<II", 3, 10) + b"wrong-key!" + b"payload")
-        with self.assertRaisesRegex(ValueError, "public key"):
+        self.crx.write_bytes(crx3_with_rsa_proof(b"wrong-key!"))
+        with self.assertRaisesRegex(ValueError, "pinned extension ID"):
             self.publish()
 
     def test_rejects_bad_update_url(self):
