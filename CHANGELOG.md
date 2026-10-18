@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0](https://github.com/yohi/turnshade/compare/v1.5.0...v1.6.0) (2026-10-18)
+
+
+### Features
+
+* add fail-closed POSIX installer for Chrome Linux external updates ([5f18f91](https://github.com/yohi/turnshade/commit/5f18f91dae4c8552fcc79c10aba79d09bc4dd3ea))
+* curl | sh installer supporting Chrome Stable, Beta and Dev ([a3b8ea4](https://github.com/yohi/turnshade/commit/a3b8ea461e29f8649bee4e545d2d1135dbade8b3))
+* include pinned-ID install.sh in atomic Pages deploy and reuse signed CRX ([69cc581](https://github.com/yohi/turnshade/commit/69cc5814e105053506b6129d2f3776c7eef55df5))
+* select Chrome Stable Beta or Dev and isolate system registration per channel ([2d571f0](https://github.com/yohi/turnshade/commit/2d571f0fff6512c78758064066c2d538f3f946f5))
+
+
+### Bug Fixes
+
+* defer curl-piped installer execution until complete main definition and validate channel binary ([201c932](https://github.com/yohi/turnshade/commit/201c932ee95e3110fa920fcd8f94ce0928688408))
+* fail closed on failed update-manifest download ([5ed5cf6](https://github.com/yohi/turnshade/commit/5ed5cf66176238ff2e45a7f421c01259ca206be0))
+* respect both official Chrome Linux extension directories and avoid duplicate registrations ([f275ce7](https://github.com/yohi/turnshade/commit/f275ce7b5ccbba97d80bbf953adca0f1cd8cf491))
+* verify structured CRX3 proof identity with and without signing key ([817aaab](https://github.com/yohi/turnshade/commit/817aaab262db9b4a3ee462344b4fabd0c21b552c))
+
 ## [1.5.0](https://github.com/yohi/turnshade/compare/v1.4.0...v1.5.0) (2026-10-18)
 
 
