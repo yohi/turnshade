@@ -37,12 +37,23 @@ Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のター�
 
 ```sh
 curl -fsSL https://yohi.github.io/turnshade/install.sh | sh
+
+# Chrome Beta の全Profileに登録
+curl -fsSL https://yohi.github.io/turnshade/install.sh | sh -s -- --channel beta
+
+# Chrome Dev（google-chrome-unstable）の全Profileに登録
+curl -fsSL https://yohi.github.io/turnshade/install.sh | sh -s -- --channel dev
 ```
 
 - Chrome Web Store不要、ZIP/CRXダウンロード不要、ソースの展開フォルダー不要。
-- スクリプトはGoogle Chrome/Linuxを確認し、HTTPSの更新XMLの拡張IDとCRX配信先を検証してから、Google Chrome公式の `/opt/google/chrome/extensions/` または `/usr/share/google-chrome/extensions/` に `<拡張ID>.json` **1ファイルのみ**登録します。既存の登録ファイルがあればその場所を優先し、2か所への二重登録・内容不一致・シンボリックリンクは拒否します。どちらにも登録がなければ既存のディレクトリを使用し、両方なければ `/opt/google/chrome/extensions/` を作成します。システムへの書き込み時だけ `sudo` を使います。ChromiumやSnap版には未対応です。
+- `--channel stable|beta|dev` に対応（省略時 `stable`）。Chrome公式のチャネル別インストール先 `/opt/google/chrome/extensions/`、`/opt/google/chrome-beta/extensions/`、`/opt/google/chrome-unstable/extensions/` に `<拡張ID>.json` を登録します。`/usr/share/google-chrome/extensions/` はチャネル間で共有されるため、新規には書き込まず、既存登録の検証のみ行います。既存設定が異なる場合、共有先との重複、シンボリックリンクを検出した場合は停止します。システムへの書き込み時だけ `sudo` を使います。Chromium/Snap/Canaryは未対応です。
 - 既に同じ内容で登録済みなら変更せず正常終了。異なる登録内容、シンボリックリンク、想定外の拡張ID・CRX配信URLの場合は停止し、設定を上書きしません。
 - インストール後はChromeを完全終了・再起動し、`chrome://extensions`でTurnShadeを確認します。自動更新は既存のGitHub Pages経由です。
+
+**Profileについて：** 上記の登録はChromeの**チャネル全体**に適用されます。同一チャネル内の `Default`、`Profile 1` などを指定してインストールすることはできません。特定のProfileだけでTurnShadeを使いたい場合は、各Profileの `chrome://extensions` で有効/無効を管理してください。Profileの `Preferences` や `Secure Preferences` をスクリプトで書き換えることはしません。
+
+ChromeのProfileの場所は `chrome://version` の `Profile Path` で確認できます。通常のLinuxユーザーデータディレクトリはStable=`~/.config/google-chrome`、Beta=`~/.config/google-chrome-beta`、Dev=`~/.config/google-chrome-unstable` ですが、`--user-data-dir` 等で変更可能です。これらは**ブラウザのプロファイルデータ格納先**であり、TurnShadeの登録用JSONの配置先ではありません。
+
 - **`curl | sh`はインターネットから取得したスクリプトを直接実行します。** 実行前にソースを確認するなら、下記の方法を推奨します。
 
 ```sh
