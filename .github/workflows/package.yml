@@ -148,6 +148,10 @@ jobs:
           expected_id, _ = extension_id_from_key(key)
           build_site(artifact, key, Path("manifest.json"), f"v{version}",
                      expected_id, Path(os.environ["RUNNER_TEMP"]) / "pages-smoke")
+          # Validate that a real Chrome-generated CRX3 can be redeployed
+          # without private-key access or resigning (installer-only workflow).
+          build_site(artifact, None, Path("manifest.json"), f"v{version}",
+                     expected_id, Path(os.environ["RUNNER_TEMP"]) / "pages-reuse-smoke")
           PY
           echo "Test-only CRX3 + update site produced with an ephemeral key (never published)"
 
