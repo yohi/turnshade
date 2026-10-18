@@ -39,6 +39,9 @@ jobs:
       - name: Test background logic
         run: node --test tests/service-worker.test.cjs
 
+      - name: Test CRX input rejection rules
+        run: python3 -m unittest discover -s tests -p 'test_crx_*.py'
+
       - name: Build installable ZIP (only approved assets)
         id: build
         shell: bash
@@ -104,9 +107,50 @@ jobs:
           compression-level: 0
 
 
+  crx-smoke:
+    name: Smoke-test Chrome CRX3 packaging with ephemeral key
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download the same tested ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: turnshade-v${{ needs.package.outputs.version }}-${{ github.run_number }}
+          path: dist
+
+      - name: Sign test-only CRX3 with a throwaway key (never published)
+        shell: bash
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl genrsa -out "$RUNNER_TEMP/crx-smoke.pem" 3072
+          bash scripts/pack_crx.sh "dist/turnshade-v$VERSION.zip" \
+            "v$VERSION" "$RUNNER_TEMP/crx-smoke.pem" "$RUNNER_TEMP/crx-out"
+          test -s "$RUNNER_TEMP/crx-out/turnshade-v$VERSION.crx"
+          CRX_TEST_VERSION="$VERSION" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.build_update_site import build_site, extension_id_from_key
+          version = os.environ["CRX_TEST_VERSION"]
+          key = Path(os.environ["RUNNER_TEMP"]) / "crx-smoke.pem"
+          artifact = Path(os.environ["RUNNER_TEMP"]) / "crx-out" / f"turnshade-v{version}.crx"
+          expected_id, _ = extension_id_from_key(key)
+          build_site(artifact, key, Path("manifest.json"), f"v{version}",
+                     expected_id, Path(os.environ["RUNNER_TEMP"]) / "pages-smoke")
+          PY
+          echo "Test-only CRX3 + update site produced with an ephemeral key (never published)"
+
   release:
     name: Manage version and GitHub Release (Google release-please)
-    needs: package
+    needs: [package, crx-smoke]
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-slim
     timeout-minutes: 10
@@ -115,6 +159,9 @@ jobs:
       pull-requests: write
       issues: write
 
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Create or update release PR / GitHub Release
         id: release
@@ -160,3 +207,16 @@ jobs:
           gh release upload "$RELEASE_TAG" "$zip" "$zip.sha256" --repo "$GITHUB_REPOSITORY"
           echo "Published ZIP and checksum to:"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq '.url'
+
+  publish-crx:
+    name: Publish signed CRX and GitHub Pages update
+    needs: [package, release]
+    if: needs.release.outputs.release_created == 'true' && vars.TURNSHADE_CRX_PUBLISH_ENABLED == 'true'
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/sign-crx.yml
+    with:
+      tag: ${{ needs.release.outputs.tag_name }}
+    secrets: inherit
