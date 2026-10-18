@@ -39,8 +39,11 @@ jobs:
       - name: Test background logic
         run: node --test tests/service-worker.test.cjs
 
-      - name: Test CRX input rejection rules
-        run: python3 -m unittest discover -s tests -p 'test_crx_*.py'
+      - name: Test CRX and offline curl-installer safety
+        run: |
+          python3 -m unittest discover -s tests -p 'test_crx_*.py'
+          python3 -m unittest discover -s tests -p 'test_installer.py'
+          sh -n scripts/install.sh
 
       - name: Build installable ZIP (only approved assets)
         id: build
