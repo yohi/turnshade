@@ -20,7 +20,7 @@ Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のター�
 
 ## 正式リリースパッケージと自動バージョン管理
 
-最新版は [GitHub Releases](https://github.com/yohi/turnshade/releases/latest) の **Assets** にある `turnshade-vX.Y.Z.zip` をダウンロードしてください。CRXが添付済みの場合は下記のLinux向け手動インストールも利用できます。GitHubが自動生成する **Source code (zip)** は拡張本体の配布物ではありません。
+最新版は [GitHub Releases](https://github.com/yohi/turnshade/releases/latest) の **Assets** にある `turnshade-vX.Y.Z.zip` をダウンロードしてください。初期設定・公開が完了した後は、上記のGitHub Pagesによる署名済みCRX自動更新も利用できます。GitHubが自動生成する **Source code (zip)** は拡張本体の配布物ではありません。
 
 - CIの実行環境は `ubuntu-slim`。PushとPull RequestでJavaScript構文と単体テストを検証し、拡張ファイルのみZIP化します。
 - Google製の [release-please](https://github.com/googleapis/release-please) が、`master` 上の **Conventional Commits** から次のバージョンを判定し、**Release PR** を作成します。
@@ -31,41 +31,62 @@ Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のター�
 
 **運用上の注意:** `GITHUB_TOKEN` がRelease PRを作成できない場合は、GitHubリポジトリの **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests** を有効にしてください。また、`GITHUB_TOKEN` が作成したPRは後続の通常のCIトリガーを発火させないため、リリースPRは内容を確認してからマージしてください。
 
-## Linux向け署名済みCRX（Web Store公開なし・手動配布）
+## GitHub連携の自動配布（Linux版Chrome・Web Store非公開）
 
-**この機能はCRX署名鍵の登録後に利用できます。** 現在のReleaseにCRXがあるとは限りません。従来のZIP配布は継続します。初期導入では自動更新は提供しません。
+TurnShadeはGitHub Releasesに署名済みCRXを保存し、GitHub Pagesに更新マニフェストと**同じCRXをまとめて公開**します。ChromeはGitHub Pagesから最新版を取得でき、ユーザーがCloneやZIP展開フォルダーを維持する必要はありません。Chrome管理の拡張データと小さなLinux登録JSONは残ります。
 
-### Ownerによる一度きりの鍵準備
+**予定するURL（初期設定・初回公開が完了するまでは利用できません）：**
 
-1. RSA秘密鍵を安全な管理環境で**一度だけ**生成し、復旧できる安全な保管先（例：暗号化されたパスワードマネージャー）へバックアップしてください。毎回生成すると拡張IDが変わり、上書き更新できません。
-2. GitHubのリポジトリ **Settings → Secrets and variables → Actions** に、リポジトリSecret `TURNSHADE_CRX_PRIVATE_KEY_PEM` を登録してください（PEM全文）。**Secretの値やファイルをIssue・PR・ログ・リポジトリに掲載しないでください。**
-3. 必要なら **Settings → Environments → crx-signing** で人間による環境承認を設定できます。
+- 更新XML: https://yohi.github.io/turnshade/updates.xml
+- 配信用CRX: https://yohi.github.io/turnshade/turnshade-vX.Y.Z.crx
+- 永続アーカイブ: https://github.com/yohi/turnshade/releases
 
-鍵ファイルをローカルに保管し続けたくない場合は、バックアップ先を用意したうえで、GitHub CLIの標準入力から秘密鍵を登録できます。秘密鍵を作る操作そのものはOwnerが実施し、ChatGPTやGitHub Actionsが勝手に発行しません。**バックアップなしでGitHub Secretだけに保存する運用は推奨しません**（Secretの値は後から読み出せません）。
+### Ownerの初期設定（公開前）
 
-### 既存ReleaseへのCRX添付
+1. 署名用RSA秘密鍵を**一度だけ**生成し、Bitwarden等の安全な場所に暗号化バックアップする。今後も同じ鍵が必須です。秘密鍵をリポジトリ・Issue・PR・ログ・CI成果物に登録しない。
+2. 生成した鍵をもとに32文字の拡張IDを計算する。作成済み秘密鍵が signing.pem にあり、作業ツリーに scripts/build_update_site.py がある場合の例：
 
-1. GitHub Actionsで **Sign CRX for published Release (manual)** を選択する。
-2. **Run workflow** → ブランチ`master` → 既存の公開済みタグ（例：`v1.4.0`）を入力する。
-3. ワークフローはRelease既存ZIPと`.sha256`を取得・照合し、ZIP内の拡張ファイルを許可リスト検証してから、秘密鍵でCRX3を生成します。
-4. 成功時に、そのReleaseのAssetsへ `turnshade-vX.Y.Z.crx` と `.crx.sha256` を**追加**します。既存CRXは自動上書きしません。キーが未登録またはパッケージ検証に失敗した場合は公開しません。
+       python3 - <<'PY'
+       from pathlib import Path
+       from scripts.build_update_site import extension_id_from_key
+       print(extension_id_from_key(Path("signing.pem"))[0])
+       PY
 
-PRのCIは**一時テスト鍵**でCRX3の生成だけを検証し、そのCRXは公開しません。本番署名は`master`からの手動実行とGitHub Secretが必要です。Release作成イベントに基づく自動CRX署名・更新配信は未実装です。
+3. リポジトリの **Settings → Secrets and variables → Actions** へ次を登録する。
+   - Repository secret **TURNSHADE_CRX_PRIVATE_KEY_PEM**: 秘密鍵PEM全文
+   - Repository variable **TURNSHADE_EXTENSION_ID**: 上で得た32文字の拡張ID
+   - Repository variable **TURNSHADE_CRX_PUBLISH_ENABLED**: 初期は false（未設定でもよい）
+4. **Settings → Pages → Build and deployment → Source: GitHub Actions** を選択。必要に応じて Environment **crx-signing** に手動承認を設ける。
+5. GitHub Actions の **Publish signed CRX and Chrome update site** から、master と**新方式の update_url が入った最新の正式Release**を指定して初回公開する。v1.4.0は update_url を含まないため公開不可。新方式のRelease発行後に実施する。
+6. XMLが取得できて appid が期待IDと一致し、配信CRXの応答ヘッダー（Content-Type / X-Content-Type-Options）とLinux Chromeの導入・更新が正常なことを確認する。**GitHub Pagesを使った実機自動更新はまだ未検証**。
+7. 検証後、Repository variable **TURNSHADE_CRX_PUBLISH_ENABLED=true** に変更する。以後は新Release作成をトリガーに、既存テスト済みZIPからCRXを署名し、Releaseに保存したうえでPagesへXMLとCRXを公開する。PRマージだけでReleaseが発行されなければ配布は動かない。
 
-### Ubuntu / Google Chromeでの手動インストール
+CIでは使い捨て鍵でCRX3生成とXML構築をスモークテストし、正式な鍵は使いません。実配布では拡張ID・公開鍵・ZIPハッシュ・バージョンを検証し、不一致なら停止します。
 
-1. Release AssetsからCRXと`.crx.sha256`を取得し、同じディレクトリで`sha256sum -c turnshade-vX.Y.Z.crx.sha256`を実行する。
-2. Chromeで`chrome://extensions`を開き、ダウンロードしたCRXを拡張機能画面へドラッグ＆ドロップして、**Chromeが許可する場合のみ**インストールを承認する。
-3. Chromeの拡張一覧にTurnShadeがインストールされ、動作することを確認してから、ダウンロードしたCRXを削除する。Chrome内部にインストール済みのファイルは残りますが、別途展開したソースフォルダーは不要です。
+### Ubuntu Chromeでの初回導入（CRXファイルのダウンロード不要）
 
-**制約:** Linux版ChromeではWeb Store外の手動インストールが公式にサポートされますが、導入方法はChromeのバージョン・ポリシーにより制限されることがあります。ドラッグ＆ドロップで拒否された場合、セキュリティ制限を回避しないでください。Linuxの外部拡張設定（`external_crx`）はCRXファイルを所定の場所に保持する方式なので、「元ファイルを残さない」希望には合いません。別途、管理されたセルフホスト配布を設計する必要があります。Windows/macOSへのWeb Store外手動インストールを保証しません。
+公開XMLの appid に示される**実際の拡張ID**を設定し、Linuxの公式 external_update_url 方式を使います。下記のファイルは小さな設定JSONであり、拡張の展開フォルダーではありません。
 
-**注意:** 既存のパッケージ化されていないTurnShadeと、初めて署名したCRXでは拡張IDが異なる場合があります。インストール前に旧拡張をOFFにし、重複動作を避けてください。設定は拡張IDが変わると自動では引き継がれません。
+    EXTENSION_ID='実際の32文字の拡張IDに置き換える'
+    [[ "$EXTENSION_ID" =~ ^[a-p]{32}$ ]] || { echo 'Invalid extension ID' >&2; exit 1; }
+    sudo install -d -m 755 /opt/google/chrome/extensions
+    printf '{"external_update_url":"https://yohi.github.io/turnshade/updates.xml"}\n' \
+      | sudo tee "/opt/google/chrome/extensions/${EXTENSION_ID}.json" >/dev/null
+    sudo chmod 644 "/opt/google/chrome/extensions/${EXTENSION_ID}.json"
+
+Google Chromeを再起動して chrome://extensions にTurnShadeが現れることを確認します。旧「パッケージ化されていないTurnShade」はOFFにして重複動作を防いでください。署名版では拡張IDが変わり、設定が自動移行しない場合があります。
+
+### 更新・運用上の制約
+
+- Chromeは数時間おきに更新XMLを参照し、新バージョンがあれば**同じ秘密鍵で署名されたCRX**に更新します。chrome://extensions の「拡張機能を更新」でも確認できます。
+- Pages配布はXMLとCRXの**単一デプロイ**です。過去の署名済みCRXはReleasesに残ります。配信不具合に備え、旧バージョンの利用環境を直ちに削除しないでください。
+- PagesがChromeの要求するHTTPヘッダーに対応しない場合は、Content-Typeを制御可能な別のホスティング先が必要です。公開後の実機試験をGateとします。
+- Linux用の外部拡張登録方式はWeb Store不要ですが、Windows/macOSで同じ仕組みを使えるとは限りません。
 
 参考：
-- https://developer.chrome.com/docs/extensions/how-to/distribute
 - https://developer.chrome.com/docs/extensions/how-to/distribute/host-on-linux
-- https://developer.chrome.com/docs/extensions/mv3/external_extensions
+- https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions
+- https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages
 
 ## インストール・更新方法
 
