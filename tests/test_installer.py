@@ -142,7 +142,7 @@ class InstallerTest(unittest.TestCase):
     def test_shared_registration_is_respected_for_beta(self):
         self.alternate.mkdir()
         existing = self.alternate / f"{EXTENSION_ID}.json"
-        content = '{"external_update_url":"' + UPDATE_URL + '"}\\n'
+        content = '{"external_update_url":"' + UPDATE_URL + '"}\n'
         existing.write_text(content)
         result = self.run_installer("--channel=beta")
         self.assertEqual(result.returncode, 0, result.stderr)
