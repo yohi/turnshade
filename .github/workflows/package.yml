@@ -39,6 +39,9 @@ jobs:
       - name: Test background logic
         run: node --test tests/service-worker.test.cjs
 
+      - name: Test CRX input rejection rules
+        run: python3 -m unittest discover -s tests -p 'test_crx_*.py'
+
       - name: Build installable ZIP (only approved assets)
         id: build
         shell: bash
@@ -104,9 +107,39 @@ jobs:
           compression-level: 0
 
 
+  crx-smoke:
+    name: Smoke-test Chrome CRX3 packaging with ephemeral key
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download the same tested ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: turnshade-v${{ needs.package.outputs.version }}-${{ github.run_number }}
+          path: dist
+
+      - name: Sign test-only CRX3 with a throwaway key (never published)
+        shell: bash
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl genrsa -out "$RUNNER_TEMP/crx-smoke.pem" 3072
+          bash scripts/pack_crx.sh "dist/turnshade-v$VERSION.zip" \
+            "v$VERSION" "$RUNNER_TEMP/crx-smoke.pem" "$RUNNER_TEMP/crx-out"
+          test -s "$RUNNER_TEMP/crx-out/turnshade-v$VERSION.crx"
+          echo "Test-only CRX3 produced; ephemeral private key and CRX are discarded with the runner"
+
   release:
     name: Manage version and GitHub Release (Google release-please)
-    needs: package
+    needs: [package, crx-smoke]
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-slim
     timeout-minutes: 10
