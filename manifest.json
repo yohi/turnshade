@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TurnShade",
   "short_name": "TurnShade",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Chrome標準Split Viewで送信済み側を赤枠で示し、次に送信する方向を矢印で案内します。",
   "minimum_chrome_version": "140",
   "update_url": "https://yohi.github.io/turnshade/updates.xml",
