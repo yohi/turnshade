@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/yohi/turnshade/compare/v1.3.0...v1.4.0) (2026-10-18)
+
+
+### Features
+
+* derive next-turn arrow from split tab ordering with manual reverse ([44dfea5](https://github.com/yohi/turnshade/commit/44dfea5efafe07f5b4adef623d1519bdd7ab1878))
+* describe directional border in manifest ([47acd8b](https://github.com/yohi/turnshade/commit/47acd8b62a0bdb2737792fd05490002ff9bc0b83))
+* expose red border mode and arrow direction override in popup ([321f581](https://github.com/yohi/turnshade/commit/321f581f5e89cec6f8b48377a17aa68bf7f74268))
+* expose red border mode and arrow direction override in popup ([db4f042](https://github.com/yohi/turnshade/commit/db4f042d93a47626a11dfd877e8a4543612613b5))
+* mark last sent chat with red border and next-turn arrows ([cca52a9](https://github.com/yohi/turnshade/commit/cca52a9d3563b5452de098984acd0c0a0dcd8244))
+* replace dimming overlay with red border and directional cue ([4235eda](https://github.com/yohi/turnshade/commit/4235edae20dfc79d68af745d342233c0111347cb))
+
 ## [1.3.0](https://github.com/yohi/turnshade/compare/v1.2.0...v1.3.0) (2026-10-15)
 
 
