@@ -25,7 +25,9 @@ done
 # Never run a network script as root: only the final registration write needs sudo.
 # Confirm the official update manifest still advertises the pinned extension ID
 # and a same-origin, versioned CRX URL before any privileged operation.
-curl -fsSL --connect-timeout 10 --max-time 30 "$UPDATE_URL" |
+MANIFEST_XML=$(curl -fsSL --connect-timeout 10 --max-time 30 "$UPDATE_URL") ||
+  fail 'Failed to download updates.xml; no changes made.'
+printf '%s' "$MANIFEST_XML" |
 python3 -c '
 import re, sys, xml.etree.ElementTree as ET
 expected_id, expected_url = sys.argv[1:3]
