@@ -135,7 +135,18 @@ jobs:
           bash scripts/pack_crx.sh "dist/turnshade-v$VERSION.zip" \
             "v$VERSION" "$RUNNER_TEMP/crx-smoke.pem" "$RUNNER_TEMP/crx-out"
           test -s "$RUNNER_TEMP/crx-out/turnshade-v$VERSION.crx"
-          echo "Test-only CRX3 produced; ephemeral private key and CRX are discarded with the runner"
+          CRX_TEST_VERSION="$VERSION" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.build_update_site import build_site, extension_id_from_key
+          version = os.environ["CRX_TEST_VERSION"]
+          key = Path(os.environ["RUNNER_TEMP"]) / "crx-smoke.pem"
+          artifact = Path(os.environ["RUNNER_TEMP"]) / "crx-out" / f"turnshade-v{version}.crx"
+          expected_id, _ = extension_id_from_key(key)
+          build_site(artifact, key, Path("manifest.json"), f"v{version}",
+                     expected_id, Path(os.environ["RUNNER_TEMP"]) / "pages-smoke")
+          PY
+          echo "Test-only CRX3 + update site produced with an ephemeral key (never published)"
 
   release:
     name: Manage version and GitHub Release (Google release-please)
@@ -148,6 +159,9 @@ jobs:
       pull-requests: write
       issues: write
 
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Create or update release PR / GitHub Release
         id: release
@@ -193,3 +207,16 @@ jobs:
           gh release upload "$RELEASE_TAG" "$zip" "$zip.sha256" --repo "$GITHUB_REPOSITORY"
           echo "Published ZIP and checksum to:"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq '.url'
+
+  publish-crx:
+    name: Publish signed CRX and GitHub Pages update
+    needs: [package, release]
+    if: needs.release.outputs.release_created == 'true' && vars.TURNSHADE_CRX_PUBLISH_ENABLED == 'true'
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/sign-crx.yml
+    with:
+      tag: ${{ needs.release.outputs.tag_name }}
+    secrets: inherit
