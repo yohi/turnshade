@@ -34,7 +34,67 @@ def extension_id_from_key(key: Path) -> tuple[str, bytes]:
     return "".join(chr(ord("a") + int(c, 16)) for b in raw_id for c in f"{b:02x}"), public_der
 
 
-def build_site(crx: Path, key: Path, manifest_path: Path,
+def read_varint(data: bytes, start: int) -> tuple[int, int]:
+    result = 0
+    for shift in range(0, 70, 7):
+        if start >= len(data):
+            raise ValueError("Truncated CRX3 protobuf")
+        byte = data[start]
+        start += 1
+        result |= (byte & 127) << shift
+        if not byte & 128:
+            return result, start
+    raise ValueError("Oversized CRX3 protobuf varint")
+
+
+def protobuf_bytes_fields(data: bytes) -> list[tuple[int, bytes]]:
+    fields = []
+    cursor = 0
+    while cursor < len(data):
+        tag, cursor = read_varint(data, cursor)
+        number, wire = tag >> 3, tag & 7
+        if number <= 0:
+            raise ValueError("Invalid CRX3 protobuf field")
+        if wire == 2:
+            size, cursor = read_varint(data, cursor)
+            if size > len(data) - cursor:
+                raise ValueError("Truncated CRX3 protobuf field")
+            fields.append((number, data[cursor:cursor + size]))
+            cursor += size
+        elif wire == 0:
+            _, cursor = read_varint(data, cursor)
+        elif wire in (1, 5):
+            cursor += 8 if wire == 1 else 4
+            if cursor > len(data):
+                raise ValueError("Truncated CRX3 protobuf scalar")
+        else:
+            raise ValueError("Unsupported CRX3 protobuf wire type")
+    return fields
+
+
+def extension_id_from_crx(blob: bytes) -> tuple[str, bytes]:
+    """Read the RSA public key from a CRX3 signed proof (not a signature verifier)."""
+    if len(blob) < 16 or blob[:4] != b"Cr24":
+        raise ValueError("Not a CRX container")
+    version, header_size = struct.unpack_from("<II", blob, 4)
+    if version != 3 or not 0 < header_size <= len(blob) - 13 or header_size > 1024 * 1024:
+        raise ValueError("Invalid CRX3 header")
+    header = blob[12:12 + header_size]
+    proofs = [data for number, data in protobuf_bytes_fields(header) if number == 2]
+    keys = [
+        value for proof in proofs
+        for number, value in protobuf_bytes_fields(proof) if number == 1
+    ]
+    if len(keys) != 1:
+        raise ValueError("Expected exactly one CRX3 RSA public key")
+    public_der = keys[0]
+    raw_id = hashlib.sha256(public_der).digest()[:16]
+    extension_id = "".join(chr(ord("a") + int(c, 16))
+                           for b in raw_id for c in f"{b:02x}")
+    return extension_id, public_der
+
+
+def build_site(crx: Path, key: Path | None, manifest_path: Path,
                tag: str, expected_id: str, destination: Path) -> str:
     match = VERSION_PATTERN.fullmatch(tag)
     if not match or not ID_PATTERN.fullmatch(expected_id):
@@ -50,18 +110,23 @@ def build_site(crx: Path, key: Path, manifest_path: Path,
     if manifest.get("update_url") != UPDATE_URL:
         raise ValueError("Signed CRX must contain the pinned update_url")
 
-    extension_id, public_der = extension_id_from_key(key)
+    # Check the structurally parsed CRX3 RSA proof in both signing paths.
+    # This verifies key identity, not the cryptographic signature itself.
+    extension_id, crx_public_der = extension_id_from_crx(crx.read_bytes())
     if extension_id != expected_id:
-        raise ValueError("Signing key changed the pinned extension ID")
+        raise ValueError("CRX extension ID differs from pinned extension ID")
+    if key is not None:
+        signing_id, signing_public_der = extension_id_from_key(key)
+        if signing_id != expected_id or signing_id != extension_id:
+            raise ValueError("Signing key changed the pinned extension ID")
+        if signing_public_der != crx_public_der:
+            raise ValueError("CRX public key differs from provided signing key")
 
-    blob = crx.read_bytes()
-    if len(blob) < 16 or blob[:4] != b"Cr24":
-        raise ValueError("Not a CRX container")
-    crx_version, header_size = struct.unpack_from("<II", blob, 4)
-    if crx_version != 3 or not 0 < header_size <= len(blob) - 13:
-        raise ValueError("Invalid CRX3 header")
-    if public_der not in blob[12:12 + header_size]:
-        raise ValueError("CRX public key differs from pinned signing key")
+    template = Path(__file__).with_name("install.sh").read_text(encoding="utf-8")
+    token = "__TURNSHADE_EXTENSION_ID__"
+    if template.count(token) != 1:
+        raise ValueError("Unexpected installer extension-ID placeholder")
+    installer = template.replace(token, extension_id)
 
     ET.register_namespace("", NS)
     gupdate = ET.Element(f"{{{NS}}}gupdate", {"protocol": "2.0"})
@@ -75,6 +140,7 @@ def build_site(crx: Path, key: Path, manifest_path: Path,
     destination.mkdir(parents=True)
     shutil.copyfile(crx, destination / crx.name)
     (destination / "updates.xml").write_bytes(xml + b"\n")
+    (destination / "install.sh").write_text(installer, encoding="utf-8")
     (destination / ".nojekyll").write_text("", encoding="utf-8")
     (destination / "index.html").write_text(
         '<!doctype html><html lang="ja"><meta charset="utf-8">'
@@ -91,7 +157,7 @@ def build_site(crx: Path, key: Path, manifest_path: Path,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--crx", type=Path, required=True)
-    parser.add_argument("--key", type=Path, required=True)
+    parser.add_argument("--key", type=Path, required=False, default=None)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--expected-id", required=True)

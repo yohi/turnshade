@@ -31,6 +31,40 @@ Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のター�
 
 **運用上の注意:** `GITHUB_TOKEN` がRelease PRを作成できない場合は、GitHubリポジトリの **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests** を有効にしてください。また、`GITHUB_TOKEN` が作成したPRは後続の通常のCIトリガーを発火させないため、リリースPRは内容を確認してからマージしてください。
 
+## ワンライナーでインストール（Ubuntu / Google Chrome）
+
+**配布サイトへの `install.sh` 公開後**は、GitHub Pagesから次のコマンド1行でTurnShadeを登録できます。
+
+```sh
+curl -fsSL https://yohi.github.io/turnshade/install.sh | sh
+
+# Chrome Beta の全Profileに登録
+curl -fsSL https://yohi.github.io/turnshade/install.sh | sh -s -- --channel beta
+
+# Chrome Dev（google-chrome-unstable）の全Profileに登録
+curl -fsSL https://yohi.github.io/turnshade/install.sh | sh -s -- --channel dev
+```
+
+- Chrome Web Store不要、ZIP/CRXダウンロード不要、ソースの展開フォルダー不要。
+- `--channel stable|beta|dev` に対応（省略時 `stable`）。Chrome公式のチャネル別インストール先 `/opt/google/chrome/extensions/`、`/opt/google/chrome-beta/extensions/`、`/opt/google/chrome-unstable/extensions/` に `<拡張ID>.json` を登録します。`/usr/share/google-chrome/extensions/` はチャネル間で共有されるため、新規には書き込まず、既存登録の検証のみ行います。既存設定が異なる場合、共有先との重複、シンボリックリンクを検出した場合は停止します。システムへの書き込み時だけ `sudo` を使います。Chromium/Snap/Canaryは未対応です。
+- 既に同じ内容で登録済みなら変更せず正常終了。異なる登録内容、シンボリックリンク、想定外の拡張ID・CRX配信URLの場合は停止し、設定を上書きしません。
+- インストール後はChromeを完全終了・再起動し、`chrome://extensions`でTurnShadeを確認します。自動更新は既存のGitHub Pages経由です。
+
+**Profileについて：** 上記の登録はChromeの**チャネル全体**に適用されます。同一チャネル内の `Default`、`Profile 1` などを指定してインストールすることはできません。特定のProfileだけでTurnShadeを使いたい場合は、各Profileの `chrome://extensions` で有効/無効を管理してください。Profileの `Preferences` や `Secure Preferences` をスクリプトで書き換えることはしません。
+
+ChromeのProfileの場所は `chrome://version` の `Profile Path` で確認できます。通常のLinuxユーザーデータディレクトリはStable=`~/.config/google-chrome`、Beta=`~/.config/google-chrome-beta`、Dev=`~/.config/google-chrome-unstable` ですが、`--user-data-dir` 等で変更可能です。これらは**ブラウザのプロファイルデータ格納先**であり、TurnShadeの登録用JSONの配置先ではありません。
+
+- **`curl | sh`はインターネットから取得したスクリプトを直接実行します。** 実行前にソースを確認するなら、下記の方法を推奨します。
+
+```sh
+curl -fsSLo turnshade-install.sh https://yohi.github.io/turnshade/install.sh
+less turnshade-install.sh
+sh turnshade-install.sh
+rm turnshade-install.sh
+```
+
+重要：このインストーラーは、**PRがマージされただけでは公開されません**。初回に限りGitHub Actionsの `Publish installer to existing signed Release site` を`master`から手動実行し、最新の正式リリース（例：`v1.5.0`）を指定してください。既存の署名済みCRXを変更・再署名せずに、同じCRXと更新XML、`install.sh`を1回のGitHub Pagesデプロイで公開します。今後の新しいReleaseでもインストーラーは自動で含まれます。公開前に `curl -fsSL https://yohi.github.io/turnshade/install.sh` がスクリプトを返すことを必ず確認してください。
+
 ## GitHub連携の自動配布（Linux版Chrome・Web Store非公開）
 
 TurnShadeはGitHub Releasesに署名済みCRXを保存し、GitHub Pagesに更新マニフェストと**同じCRXをまとめて公開**します。ChromeはGitHub Pagesから最新版を取得でき、ユーザーがCloneやZIP展開フォルダーを維持する必要はありません。Chrome管理の拡張データと小さなLinux登録JSONは残ります。
