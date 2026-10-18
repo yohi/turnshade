@@ -20,20 +20,26 @@ class InstallerTest(unittest.TestCase):
         self.bin.mkdir()
         self.directory = self.root / "extensions"
         self.alternate = self.root / "alternate"
+        self.beta = self.root / "beta"
+        self.dev = self.root / "dev"
         script = (ROOT / "scripts/install.sh").read_text()
         self.assertEqual(script.count("__TURNSHADE_EXTENSION_ID__"), 1)
         script = script.replace("__TURNSHADE_EXTENSION_ID__", EXTENSION_ID)
-        self.assertIn("PRIMARY_DIR='/opt/google/chrome/extensions'", script)
-        self.assertIn("ALTERNATE_DIR='/usr/share/google-chrome/extensions'", script)
-        script = script.replace("PRIMARY_DIR='/opt/google/chrome/extensions'",
-                                f"PRIMARY_DIR='{self.directory}'")
-        script = script.replace("ALTERNATE_DIR='/usr/share/google-chrome/extensions'",
-                                f"ALTERNATE_DIR='{self.alternate}'")
+        for original, local in (
+            ("CHANNEL_DIR='/opt/google/chrome/extensions'", f"CHANNEL_DIR='{self.directory}'"),
+            ("CHANNEL_DIR='/opt/google/chrome-beta/extensions'", f"CHANNEL_DIR='{self.beta}'"),
+            ("CHANNEL_DIR='/opt/google/chrome-unstable/extensions'", f"CHANNEL_DIR='{self.dev}'"),
+            ("SHARED_DIR='/usr/share/google-chrome/extensions'", f"SHARED_DIR='{self.alternate}'"),
+        ):
+            self.assertIn(original, script)
+            script = script.replace(original, local)
         self.script = self.root / "install.sh"
         self.script.write_text(script)
 
         for command, body in {
             "google-chrome": "#!/bin/sh\nexit 0\n",
+            "google-chrome-beta": "#!/bin/sh\nexit 0\n",
+            "google-chrome-unstable": "#!/bin/sh\nexit 0\n",
             "id": "#!/bin/sh\nif [ \"$1\" = -u ]; then echo 0; else /usr/bin/id \"$@\"; fi\n",
             "curl": "#!/bin/sh\ncat \"$MOCK_XML\"\n",
         }.items():
@@ -54,12 +60,13 @@ class InstallerTest(unittest.TestCase):
                 f'<app appid="{ext_id}"><updatecheck version="1.5.0"'
                 f' codebase="{url}"/></app></gupdate>')
 
-    def run_installer(self):
-        return subprocess.run(["sh", str(self.script)], env=self.env,
+    def run_installer(self, *args):
+        return subprocess.run(["sh", str(self.script), *args], env=self.env,
                               capture_output=True, text=True)
 
-    def target(self):
-        return self.directory / f"{EXTENSION_ID}.json"
+    def target(self, channel="stable"):
+        folders = {"stable": self.directory, "beta": self.beta, "dev": self.dev}
+        return folders[channel] / f"{EXTENSION_ID}.json"
 
     def test_register_then_idempotent(self):
         first = self.run_installer()
@@ -81,12 +88,12 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual(existing.read_text(),
                          '{"external_update_url":"' + UPDATE_URL + '"}\n')
 
-    def test_new_registration_prefers_existing_alternate_directory(self):
+    def test_new_registration_never_creates_a_shared_entry(self):
         self.alternate.mkdir()
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(self.target().exists())
-        self.assertTrue((self.alternate / f"{EXTENSION_ID}.json").is_file())
+        self.assertTrue(self.target().is_file())
+        self.assertFalse((self.alternate / f"{EXTENSION_ID}.json").exists())
 
     def test_refuses_duplicate_registration_in_both_locations(self):
         self.directory.mkdir()
@@ -97,7 +104,7 @@ class InstallerTest(unittest.TestCase):
         alternate_file.write_text(content)
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("both Chrome directories", result.stderr)
+        self.assertIn("both channel and shared Chrome directories", result.stderr)
         self.assertEqual(self.target().read_text(), content)
         self.assertEqual(alternate_file.read_text(), content)
 
@@ -107,6 +114,51 @@ class InstallerTest(unittest.TestCase):
         alternate_file.write_text('{"external_update_url":"https://different.example"}\n')
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.target().exists())
+
+    def test_beta_channel_has_distinct_registration(self):
+        result = self.run_installer("--channel", "beta")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.target("beta").is_file())
+        self.assertFalse(self.target("stable").exists())
+        self.assertFalse(self.target("dev").exists())
+        self.assertFalse((self.alternate / f"{EXTENSION_ID}.json").exists())
+        self.assertIn("Chrome beta (all profiles)", result.stdout)
+
+    def test_dev_channel_via_equals_syntax(self):
+        result = self.run_installer("--channel=dev")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.target("dev").is_file())
+        self.assertFalse(self.target("stable").exists())
+        self.assertFalse(self.target("beta").exists())
+
+    def test_channel_registrations_can_coexist(self):
+        for channel in ("stable", "beta", "dev"):
+            result = self.run_installer("--channel", channel)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for channel in ("stable", "beta", "dev"):
+            self.assertTrue(self.target(channel).is_file())
+
+    def test_shared_registration_is_respected_for_beta(self):
+        self.alternate.mkdir()
+        existing = self.alternate / f"{EXTENSION_ID}.json"
+        content = '{"external_update_url":"' + UPDATE_URL + '"}\\n'
+        existing.write_text(content)
+        result = self.run_installer("--channel=beta")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("shared registration may affect", result.stdout)
+        self.assertFalse(self.target("beta").exists())
+
+    def test_profile_specific_option_is_rejected_before_writing(self):
+        result = self.run_installer("--profile=Profile 2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Profile-specific install unsupported", result.stderr)
+        self.assertFalse(self.target().exists())
+
+    def test_unknown_channel_is_rejected_before_writing(self):
+        result = self.run_installer("--channel=canary")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unsupported Chrome channel", result.stderr)
         self.assertFalse(self.target().exists())
 
     def test_rejects_other_extension_id_before_writing(self):
