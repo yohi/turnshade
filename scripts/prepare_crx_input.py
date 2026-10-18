@@ -35,6 +35,8 @@ def prepare(archive: Path, tag: str, destination: Path) -> None:
     manifest = json.loads(data["manifest.json"].decode("utf-8"))
     if manifest.get("manifest_version") != 3 or "v" + manifest.get("version", "") != tag:
         raise ValueError("Release tag and manifest version do not match")
+    if manifest.get("update_url") != "https://yohi.github.io/turnshade/updates.xml":
+        raise ValueError("This release predates the self-hosted update_url")
     if manifest.get("background", {}).get("service_worker") != "service-worker.js":
         raise ValueError("Unexpected service worker")
     if manifest.get("action", {}).get("default_popup") != "popup.html":
