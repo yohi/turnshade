@@ -17,6 +17,7 @@ def assets(version="1.4.0"):
     manifest = {
         "manifest_version": 3,
         "version": version,
+        "update_url": "https://yohi.github.io/turnshade/updates.xml",
         "background": {"service_worker": "service-worker.js"},
         "action": {"default_popup": "popup.html"},
         "content_scripts": [{"js": ["content.js"]}],
@@ -55,6 +56,15 @@ class ReleaseZipTest(unittest.TestCase):
         self.make_zip()
         with self.assertRaisesRegex(ValueError, "version"):
             module.prepare(self.archive, "v1.5.0", self.out)
+
+    def test_rejects_missing_update_url(self):
+        bad = assets()
+        manifest = json.loads(bad["manifest.json"])
+        manifest.pop("update_url")
+        bad["manifest.json"] = json.dumps(manifest).encode()
+        self.make_zip(bad)
+        with self.assertRaisesRegex(ValueError, "update_url"):
+            module.prepare(self.archive, "v1.4.0", self.out)
 
     def test_rejects_unexpected_file(self):
         unsafe = assets()
