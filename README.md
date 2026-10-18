@@ -40,7 +40,7 @@ curl -fsSL https://yohi.github.io/turnshade/install.sh | sh
 ```
 
 - Chrome Web Store不要、ZIP/CRXダウンロード不要、ソースの展開フォルダー不要。
-- スクリプトはGoogle Chrome/Linuxを確認し、HTTPSの更新XMLの拡張IDとCRX配信先を検証してから、`/opt/google/chrome/extensions/<拡張ID>.json` **1ファイルのみ**登録します。システムへの書き込み時だけ `sudo` を使います。
+- スクリプトはGoogle Chrome/Linuxを確認し、HTTPSの更新XMLの拡張IDとCRX配信先を検証してから、Google Chrome公式の `/opt/google/chrome/extensions/` または `/usr/share/google-chrome/extensions/` に `<拡張ID>.json` **1ファイルのみ**登録します。既存の登録ファイルがあればその場所を優先し、2か所への二重登録・内容不一致・シンボリックリンクは拒否します。どちらにも登録がなければ既存のディレクトリを使用し、両方なければ `/opt/google/chrome/extensions/` を作成します。システムへの書き込み時だけ `sudo` を使います。ChromiumやSnap版には未対応です。
 - 既に同じ内容で登録済みなら変更せず正常終了。異なる登録内容、シンボリックリンク、想定外の拡張ID・CRX配信URLの場合は停止し、設定を上書きしません。
 - インストール後はChromeを完全終了・再起動し、`chrome://extensions`でTurnShadeを確認します。自動更新は既存のGitHub Pages経由です。
 - **`curl | sh`はインターネットから取得したスクリプトを直接実行します。** 実行前にソースを確認するなら、下記の方法を推奨します。
