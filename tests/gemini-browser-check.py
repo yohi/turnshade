@@ -24,6 +24,12 @@ with sync_playwright() as pw:
     source = (root / 'content.js').read_text(encoding='utf-8')
     assert "location.hostname === 'gemini.google.com'" in source
     # Switch only the test-loaded script to the Gemini provider branch.
+    page.evaluate("""() => {
+      const original = Element.prototype.attachShadow;
+      Element.prototype.attachShadow = function(init) {
+        return original.call(this, {...init, mode:'open'});
+      };
+    }""")
     page.add_script_tag(content=source.replace("location.hostname === 'gemini.google.com'", 'true'))
     page.wait_for_timeout(300)
     assert page.evaluate('window.__messages[0].type') == 'STS_SYNC'
@@ -41,8 +47,11 @@ with sync_playwright() as pw:
     }""")
     page.wait_for_timeout(300)
     assert page.evaluate('window.__messages.filter(x=>x.type==="STS_SENT").length') == 1
-    page.evaluate("""() => window.__listeners[0]({type:'STS_SET_SHADE',shaded:true},{},()=>{})""")
-    assert page.locator('#chatgpt-split-turn-shade-overlay').evaluate('(el) => getComputedStyle(el).display') == 'block'
+    page.evaluate("""() => window.__listeners[0]({type:'STS_SET_SHADE',shaded:true,direction:'left'},{},()=>{})""")
+    overlay = page.locator('#chatgpt-split-turn-shade-overlay')
+    assert overlay.evaluate('(el) => getComputedStyle(el).display') == 'block'
+    assert overlay.evaluate("(el) => el.shadowRoot.querySelector('div').style.boxShadow.includes('#dc2626')")
+    assert overlay.evaluate("(el) => el.shadowRoot.querySelectorAll('div')[1].textContent") == '← 次は左へ'
     page.evaluate("""() => window.__listeners[0]({type:'STS_SET_SHADE',shaded:false},{},()=>{})""")
     assert page.locator('#chatgpt-split-turn-shade-overlay').evaluate('(el) => getComputedStyle(el).display') == 'none'
     # Gemini's assistant output must not be counted as an outgoing user turn.
@@ -59,5 +68,5 @@ with sync_playwright() as pw:
     }""")
     page.wait_for_timeout(300)
     assert page.evaluate('window.__messages.filter(x=>x.type==="STS_SENT").length') == 2
-    print('GEMINI_BROWSER_SMOKE_PASS: explicit send, passive DOM, assistant-ignore, overlay toggle')
+    print('GEMINI_BROWSER_SMOKE_PASS: explicit send, passive DOM, assistant-ignore, red border + arrow')
     browser.close()

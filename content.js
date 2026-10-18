@@ -38,7 +38,9 @@
   let current = capture();
   let pending = null;
   let overlayHost = null;
+  let overlayLabel = null;
   let shaded = false;
+  let arrowDirection = 'unknown';
   let scheduled = false;
   let lastEvent = '初期化';
   let lastSentAt = null;
@@ -77,21 +79,32 @@
       'margin:0!important','padding:0!important','border:0!important'
     ].join(';');
     const root = overlayHost.attachShadow({mode:'closed'});
-    const veil = document.createElement('div');
-    veil.style.cssText = 'position:absolute;inset:0;background:rgba(72,72,72,.32);pointer-events:none';
-    const label = document.createElement('div');
-    label.textContent = '送信済み  ·  次は反対側';
-    label.style.cssText = [
-      'position:absolute','top:12px','right:14px','font:600 12px/1.4 system-ui,sans-serif',
-      'background:rgba(45,45,45,.80)','color:white','border-radius:8px',
-      'padding:5px 10px','pointer-events:none','box-shadow:0 2px 8px rgba(0,0,0,.2)'
+    const border = document.createElement('div');
+    border.style.cssText = [
+      'position:absolute','inset:0','box-shadow:inset 0 0 0 5px #dc2626',
+      'pointer-events:none'
     ].join(';');
-    root.append(veil,label);
+    overlayLabel = document.createElement('div');
+    overlayLabel.style.cssText = [
+      'position:absolute','font:700 14px/1.4 system-ui,sans-serif',
+      'background:#b91c1c','color:#fff','border-radius:9px',
+      'padding:8px 12px','pointer-events:none','white-space:nowrap',
+      'box-shadow:0 2px 9px rgba(0,0,0,.25)'
+    ].join(';');
+    root.append(border,overlayLabel);
     (document.body || document.documentElement).appendChild(overlayHost);
   }
-  function setShade(value) {
+  function setShade(value, direction = 'unknown') {
     shaded = Boolean(value);
+    arrowDirection = direction === 'left' || direction === 'right' ? direction : 'unknown';
     ensureOverlay();
+    overlayLabel.textContent = arrowDirection === 'right'
+      ? '次は右へ →'
+      : arrowDirection === 'left' ? '← 次は左へ' : '送信済み · 次は反対側';
+    overlayLabel.style.left = arrowDirection === 'left' ? '14px' : 'auto';
+    overlayLabel.style.right = arrowDirection === 'left' ? 'auto' : '14px';
+    overlayLabel.style.top = arrowDirection === 'unknown' ? '12px' : '50%';
+    overlayLabel.style.transform = arrowDirection === 'unknown' ? 'none' : 'translateY(-50%)';
     overlayHost.style.display = shaded ? 'block' : 'none';
   }
 
@@ -209,11 +222,11 @@
   });
   observer.observe(document.documentElement, {childList:true, subtree:true, characterData:true});
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === 'STS_SET_SHADE') {setShade(message.shaded); return false;}
+    if (message?.type === 'STS_SET_SHADE') {setShade(message.shaded, message.direction); return false;}
     if (message?.type === 'STS_DIAGNOSTICS') {
       const s = capture();
       sendResponse({
-        loaded:true, provider:PROVIDER, shaded, userMessages:s.count,
+        loaded:true, provider:PROVIDER, shaded, arrowDirection, userMessages:s.count,
         editorDetected:Boolean(document.querySelector(EDITOR_SELECTOR)),
         sendButtonDetected:Boolean(document.querySelector(SEND_SELECTOR)),
         lastEvent, lastSentAt, lastTransport, pending:Boolean(pending)

@@ -31,6 +31,17 @@ function isSamePair(a, b) {
   return Boolean(a && b && a.tabIds?.length === 2 && b.tabIds?.length === 2 &&
     a.tabIds[0] === b.tabIds[0] && a.tabIds[1] === b.tabIds[1]);
 }
+
+// Tab.index reflects tab-strip order. It is only a best-effort estimate of
+// visual pane order; the popup can reverse arrows if Chrome displays the panes swapped.
+function directionsForSplit(members, reversed = false) {
+  if (members.length !== 2 || !members.every(t => Number.isInteger(t.index)) ||
+      members[0].index === members[1].index) return {};
+  const [left, right] = [...members].sort((a, b) => a.index - b.index);
+  return reversed
+    ? {[left.id]:'left', [right.id]:'right'}
+    : {[left.id]:'right', [right.id]:'left'};
+}
 async function readStates() { return (await chrome.storage.session.get(STATES_KEY))[STATES_KEY] ?? {}; }
 async function saveStates(states) { await chrome.storage.session.set({[STATES_KEY]: states}); }
 async function readOptions() { return (await chrome.storage.local.get(OPTIONS_KEY))[OPTIONS_KEY] ?? {}; }
@@ -40,17 +51,18 @@ async function getPair(tabId) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab || !isSupportedUrl(tab.url)) return null;
   const nearby = await chrome.tabs.query({ windowId: tab.windowId });
+  const options = await readOptions();
   if (isSplitId(tab.splitViewId)) {
     const members = nearby.filter(t => t.splitViewId === tab.splitViewId);
     if (members.length === 2 && members.every(t => isSupportedUrl(t.url))) {
       return {
         key: `split:${tab.windowId}:${tab.splitViewId}`,
         source: 'split', windowId: tab.windowId, splitViewId: tab.splitViewId,
-        tabIds: members.map(t => t.id).sort((a,b) => a-b)
+        tabIds: members.map(t => t.id).sort((a,b) => a-b),
+        directions: directionsForSplit(members, options.reverseArrows)
       };
     }
   }
-  const options = await readOptions();
   if (options.twoTabFallback) {
     const members = nearby.filter(t => isSupportedUrl(t.url) && !isSplitId(t.splitViewId));
     if (members.length === 2 && members.some(t => t.id === tabId)) {
@@ -63,9 +75,9 @@ async function getPair(tabId) {
   return null;
 }
 
-async function sendStyle(tabId, shaded) {
+async function sendStyle(tabId, shaded, direction = 'unknown') {
   try {
-    await chrome.tabs.sendMessage(tabId, {type:'STS_SET_SHADE', shaded});
+    await chrome.tabs.sendMessage(tabId, {type:'STS_SET_SHADE', shaded, direction});
     return true;
   } catch {
     // A tab may still be navigating, or may need reload following installation.
@@ -79,7 +91,8 @@ async function onSent(tabId, cause = 'dom') {
   const states = await readStates();
   states[pair.key] = {...pair, shadedTabId:tabId, cause, updatedAt:Date.now()};
   await saveStates(states);
-  const results = await Promise.all(pair.tabIds.map(id => sendStyle(id, id === tabId)));
+  const results = await Promise.all(pair.tabIds.map(id =>
+    sendStyle(id, id === tabId, pair.directions?.[id])));
   return {applied:true, delivered:results, source:pair.source};
 }
 
@@ -92,7 +105,7 @@ async function onSync(tabId) {
   const states = await readStates();
   const record = states[pair.key];
   const shaded = Boolean(isSamePair(pair, record) && record.shadedTabId === tabId);
-  await sendStyle(tabId, shaded);
+  await sendStyle(tabId, shaded, pair.directions?.[tabId]);
   return {paired:true, shaded, source:pair.source};
 }
 
@@ -129,17 +142,37 @@ async function getStatus(tabId) {
     updatedAt: record?.updatedAt ?? null,
     page,
     twoTabFallback: Boolean(options.twoTabFallback),
+    reverseArrows: Boolean(options.reverseArrows),
+    arrowDirection: pair?.directions?.[tabId] ?? 'unknown',
     lastError
   };
 }
 
 async function setFallback(value) {
-  await chrome.storage.local.set({[OPTIONS_KEY]:{twoTabFallback:Boolean(value)}});
+  const options = await readOptions();
+  await chrome.storage.local.set({[OPTIONS_KEY]:{...options, twoTabFallback:Boolean(value)}});
   const states = await readStates();
   for (const [key, record] of Object.entries(states)) {
     if (record.source === 'fallback') {
       delete states[key];
       for (const id of record.tabIds ?? []) await sendStyle(id, false);
+    }
+  }
+  await saveStates(states);
+  return {saved:true};
+}
+
+async function setReverseArrows(value) {
+  const options = await readOptions();
+  await chrome.storage.local.set({[OPTIONS_KEY]:{...options, reverseArrows:Boolean(value)}});
+  const states = await readStates();
+  // Refresh the highlighted pane immediately; no new send is necessary.
+  for (const record of Object.values(states)) {
+    if (record.source !== 'split' || !Number.isInteger(record.shadedTabId)) continue;
+    const pair = await getPair(record.shadedTabId);
+    if (pair && isSamePair(pair, record)) {
+      record.directions = pair.directions;
+      await sendStyle(record.shadedTabId, true, pair.directions?.[record.shadedTabId]);
     }
   }
   await saveStates(states);
@@ -167,6 +200,13 @@ async function pruneInvalidPairs() {
     if (!valid) {
       delete states[key]; modified = true;
       for (const id of record.tabIds ?? []) clear.add(id);
+    } else if (record.source === 'split') {
+      const directions = directionsForSplit([a,b], options.reverseArrows);
+      if (record.directions?.[record.shadedTabId] !== directions[record.shadedTabId]) {
+        record.directions = directions; modified = true;
+        if (Number.isInteger(record.shadedTabId))
+          await sendStyle(record.shadedTabId, true, directions[record.shadedTabId]);
+      }
     }
   }
   if (modified) await saveStates(states);
@@ -186,6 +226,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'STS_RESET') action = () => resetPair(message.tabId);
   }
   if (isExtension && message.type === 'STS_SET_FALLBACK') action = () => setFallback(message.value);
+  if (isExtension && message.type === 'STS_SET_REVERSE_ARROWS') action = () => setReverseArrows(message.value);
   if (!action) return false;
   enqueue(action).then(
     result => sendResponse({ok:true, ...result}),
@@ -197,5 +238,6 @@ chrome.tabs.onUpdated.addListener((_tabId, info) => {
   if (Object.hasOwn(info, 'splitViewId') || Object.hasOwn(info, 'url'))
     void enqueue(pruneInvalidPairs);
 });
+chrome.tabs.onMoved.addListener(() => {void enqueue(pruneInvalidPairs);});
 chrome.tabs.onRemoved.addListener(() => {void enqueue(pruneInvalidPairs);});
 chrome.tabs.onDetached.addListener(() => {void enqueue(pruneInvalidPairs);});

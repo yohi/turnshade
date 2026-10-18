@@ -1,6 +1,6 @@
 # TurnShade
 
-Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のターン」を分かりやすくする拡張です。送信した側をグレーにし、反対側を通常表示に戻します。灰色画面でもクリック・スクロール・コピー可能です。
+Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のターン」を分かりやすくする拡張です。最後に送信した側を **赤枠** で囲み、次に送信する方向を **矢印** で示します。反対側は通常表示のままで、赤枠側でもクリック・スクロール・コピーできます。
 
 | ペア | 状態 |
 |---|---|
@@ -9,6 +9,14 @@ Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のター�
 | Gemini × Gemini | 新規追加（実サイト統合試験未実施） |
 
 メッセージ自体は自動転送しません。GeminiのWeb UIは非公開DOMであり、画面構造変更によって送信判定が動かなくなる可能性があります。
+
+## 赤枠と矢印の表示
+
+- **左側から送信**：左画面に赤枠と「次は右へ →」。右画面は通常表示。
+- **右側から送信**：右画面に赤枠と「← 次は左へ」。左画面は通常表示。
+- 赤枠はクリックを遮らない透過オーバーレイ上に描画し、画面全体の暗転はしません。
+- Chromeの `tabs.Tab.index`（タブストリップ内の順序）から左右を**推定**します。ただしChrome拡張APIは表示ペインの物理的な左右を直接通知しないため、Chromeでペイン位置を入れ替えた場合などに逆になる可能性があります。その場合、拡張ポップアップの **「矢印の左右を反転する」** をONにしてください。この設定は全Split Viewペアに適用されます。
+- タブ順が取得できない場合や「通常タブ2枚モード」では、誤った方向を表示しないため **「送信済み · 次は反対側」** と表示します。
 
 ## 正式リリースパッケージと自動バージョン管理
 
@@ -39,18 +47,18 @@ Chrome標準の **Split View** で、ChatGPT/Geminiの2画面の「次のター�
    - `未認識` の場合、これはChrome標準Split Viewではない可能性があります。`Chrome Split ID` が `-1` や `なし` である場合、任意の「通常タブ2枚でも連携する」をONにしてみてください。これは**同じChromeウィンドウ内のChatGPTタブがちょうど2枚**の場合のみ使えます。
    - 左右を別ウィンドウにしたものは対象外です。
 3. **「拡張のページ監視」** が `読み込み済み` でなければ、左右のチャット画面を再読み込み。
-4. **「この画面をグレーにする」** を押す。
-   - グレーになればSplit/メッセージ連携の設定は成功。通常の送信でも反応しない場合は、`直近の検出` と `反映結果` を確認してください。
-   - グレーにならなければ `ペア` と `ページ監視` を再度確認してください。
+4. **「この画面を赤枠にする」** を押す。
+   - 赤枠になればSplit/メッセージ連携の設定は成功。通常の送信でも反応しない場合は、`直近の検出` と `反映結果` を確認してください。
+   - 赤枠にならなければ `ペア` と `ページ監視` を再度確認してください。
 5. 状態情報のスクリーンショットを共有してもらえれば、どの段階の失敗か特定できます（会話本文は含みません）。
 
 ## 実装とセキュリティ
 
 - Manifest V3 / Chrome 140以降。
-- Chrome標準Split Viewでは `tabs.Tab.splitViewId` により同じ分割ペアだけを更新。
+- Chrome標準Split Viewでは `tabs.Tab.splitViewId` により同じ分割ペアだけを更新。方向はタブの `index` を使って推定し、ポップアップから左右を反転可能。
 - 標準分割が未認識の時の「通常タブ2枚モード」は明示的なONのみ。
 - DOM内で送信タイミングの判定に使う文字の特徴量を計算しますが、会話本文は拡張のバックグラウンドに送信・保存しません。
-- 保存内容：Split ViewのペアID、タブID、最後の送信タブ、最終更新時刻、フォールバック設定のみ。
+- 保存内容：Split ViewのペアID、タブID、最後の送信タブ、最終更新時刻、タブ順から推定した方向、フォールバック設定、矢印反転設定のみ。
 - 外部サーバー接続なし。`tabs` 全体の閲覧権限も要求しません（ChatGPT/Geminiドメインのみホスト権限）。
 - 誤検知防止のため、会話を開いた直後の一定時間は送信操作のないDOM変化での自動反転を抑止。
 
@@ -66,7 +74,7 @@ node --test tests/service-worker.test.cjs
 python tests/content-browser-check.py
 ```
 
-2026-10-15時点：バックグラウンドのモック単体テスト8件PASS、Chromium 144のブラウザDOM模擬テストPASS。実ChatGPTサイトへのログイン済みE2EテストおよびChrome標準Split View上の実機統合テストは未実施です。
+CIではService Workerの単体テストとJavaScript構文チェックを実行します。ChatGPT/GeminiのブラウザDOM模擬テストは個別実行用です（CI未統合）。ログイン済み実サイトでのE2EおよびChrome標準Split Viewの実機統合テストは未実施です。
 
 参考：
 - https://developer.chrome.com/docs/extensions/reference/api/tabs
@@ -77,5 +85,5 @@ python tests/content-browser-check.py
 - 対象URLは `https://chatgpt.com/*`、`https://chat.openai.com/*`、`https://gemini.google.com/*` のみです。Chrome Split ViewのペアIDが同一の2タブならプロバイダー混在も認識します。
 - Geminiの送信判定は `user-query`、`rich-textarea .ql-editor`、`.send-button` などのDOM候補を使用します。Geminiの回答（`model-response`）をユーザー送信として数えないようにします。
 - プライバシー：会話テキスト・Cookie・認証トークンを送信／保存しません。正規のホスト名とHTTPSだけを受け付けます。
-- 自動テスト：`node --test tests/service-worker.test.cjs` （13件）、`python tests/content-browser-check.py` （既存ChatGPT合成DOM）、`python tests/gemini-browser-check.py` （Gemini合成DOM）。
+- 自動テスト：`node --test tests/service-worker.test.cjs` （送信切替・矢印反転・タブ移動・ペア分離）、`python tests/content-browser-check.py` （ChatGPT合成DOM）、`python tests/gemini-browser-check.py` （Gemini合成DOM）。
 - **未実施**：ログイン済みGemini実サイトでの送信判定、およびChrome標準Split Viewを使用した実機E2Eテスト。UI変更時には送信セレクターの調整が必要な場合があります。
