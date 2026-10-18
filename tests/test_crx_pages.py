@@ -47,6 +47,48 @@ class PagesReleaseTest(unittest.TestCase):
                          "https://yohi.github.io/turnshade/turnshade-v1.5.0.crx")
         self.assertEqual((self.dest / self.crx.name).read_bytes(), self.crx.read_bytes())
         self.assertTrue((self.dest / ".nojekyll").exists())
+        installer = (self.dest / "install.sh").read_text()
+        self.assertIn("EXTENSION_ID='" + self.extension_id + "'", installer)
+        self.assertIn("https://yohi.github.io/turnshade/updates.xml", installer)
+        self.assertNotIn("__TURNSHADE_EXTENSION_ID__", installer)
+        self.assertIn("python3 -c", installer)
+
+
+    def test_existing_crx_public_key_identity_without_private_key(self):
+        # CRX3 protobuf AsymmetricKeyProof with RSA key (field 2, nested field 1).
+        def field(number, data):
+            def v(n):
+                out = bytearray()
+                while n >= 128:
+                    out.append((n & 127) | 128)
+                    n >>= 7
+                out.append(n)
+                return bytes(out)
+            return v((number << 3) | 2) + v(len(data)) + data
+        proof = field(1, self.der)
+        header = field(2, proof)
+        self.crx.write_bytes(b"Cr24" + struct.pack("<II", 3, len(header))
+                             + header + b"mock content")
+        module.build_site(self.crx, None, self.manifest, "v1.5.0",
+                          self.extension_id, self.dest)
+        self.assertIn("external_update_url", (self.dest / "install.sh").read_text())
+
+    def test_existing_crx_rejects_wrong_key(self):
+        def varint(n):
+            out = bytearray()
+            while n >= 128:
+                out.append((n & 127) | 128)
+                n >>= 7
+            out.append(n)
+            return bytes(out)
+        def field(i, value):
+            return varint(i << 3 | 2) + varint(len(value)) + value
+        header = field(2, field(1, b"not-the-owner-key"))
+        self.crx.write_bytes(b"Cr24" + struct.pack("<II", 3, len(header))
+                             + header + b"payload")
+        with self.assertRaisesRegex(ValueError, "pinned extension ID"):
+            module.build_site(self.crx, None, self.manifest, "v1.5.0",
+                              self.extension_id, self.dest)
 
     def test_rejects_wrong_extension_id(self):
         wrong = ("a" if self.extension_id[0] != "a" else "b") + self.extension_id[1:]
