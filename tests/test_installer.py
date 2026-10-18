@@ -19,12 +19,16 @@ class InstallerTest(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.directory = self.root / "extensions"
+        self.alternate = self.root / "alternate"
         script = (ROOT / "scripts/install.sh").read_text()
         self.assertEqual(script.count("__TURNSHADE_EXTENSION_ID__"), 1)
         script = script.replace("__TURNSHADE_EXTENSION_ID__", EXTENSION_ID)
-        self.assertIn("INSTALL_DIR='/opt/google/chrome/extensions'", script)
-        script = script.replace("INSTALL_DIR='/opt/google/chrome/extensions'",
-                                f"INSTALL_DIR='{self.directory}'")
+        self.assertIn("PRIMARY_DIR='/opt/google/chrome/extensions'", script)
+        self.assertIn("ALTERNATE_DIR='/usr/share/google-chrome/extensions'", script)
+        script = script.replace("PRIMARY_DIR='/opt/google/chrome/extensions'",
+                                f"PRIMARY_DIR='{self.directory}'")
+        script = script.replace("ALTERNATE_DIR='/usr/share/google-chrome/extensions'",
+                                f"ALTERNATE_DIR='{self.alternate}'")
         self.script = self.root / "install.sh"
         self.script.write_text(script)
 
@@ -65,6 +69,45 @@ class InstallerTest(unittest.TestCase):
         second = self.run_installer()
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertIn("Already registered", second.stdout)
+
+    def test_reuses_valid_registration_at_alternate_official_path(self):
+        self.alternate.mkdir()
+        existing = self.alternate / f"{EXTENSION_ID}.json"
+        existing.write_text('{"external_update_url":"' + UPDATE_URL + '"}\n')
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Already registered", result.stdout)
+        self.assertFalse(self.target().exists())
+        self.assertEqual(existing.read_text(),
+                         '{"external_update_url":"' + UPDATE_URL + '"}\n')
+
+    def test_new_registration_prefers_existing_alternate_directory(self):
+        self.alternate.mkdir()
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.target().exists())
+        self.assertTrue((self.alternate / f"{EXTENSION_ID}.json").is_file())
+
+    def test_refuses_duplicate_registration_in_both_locations(self):
+        self.directory.mkdir()
+        self.alternate.mkdir()
+        content = '{"external_update_url":"' + UPDATE_URL + '"}\n'
+        self.target().write_text(content)
+        alternate_file = self.alternate / f"{EXTENSION_ID}.json"
+        alternate_file.write_text(content)
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("both Chrome directories", result.stderr)
+        self.assertEqual(self.target().read_text(), content)
+        self.assertEqual(alternate_file.read_text(), content)
+
+    def test_refuses_conflicting_alternate_registration(self):
+        self.alternate.mkdir()
+        alternate_file = self.alternate / f"{EXTENSION_ID}.json"
+        alternate_file.write_text('{"external_update_url":"https://different.example"}\n')
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.target().exists())
 
     def test_rejects_other_extension_id_before_writing(self):
         self.xml.write_text(self.make_xml(ext_id="a" * 32))
