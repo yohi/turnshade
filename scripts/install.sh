@@ -3,6 +3,10 @@
 # Publish only through the verified yohi/turnshade GitHub Pages release site.
 set -eu
 
+# Parse the complete function body before performing any installation action.
+# This prevents a truncated curl | sh stream from executing an earlier write.
+main() {
+
 EXTENSION_ID='__TURNSHADE_EXTENSION_ID__'
 UPDATE_URL='https://yohi.github.io/turnshade/updates.xml'
 SHARED_DIR='/usr/share/google-chrome/extensions'
@@ -37,29 +41,21 @@ esac
 case "$CHANNEL" in
   stable)
     CHANNEL_DIR='/opt/google/chrome/extensions'
-    BROWSER_COMMAND='google-chrome-stable'
-    FALLBACK_COMMAND='google-chrome'
     BROWSER_BINARY='/opt/google/chrome/chrome'
     ;;
   beta)
     CHANNEL_DIR='/opt/google/chrome-beta/extensions'
-    BROWSER_COMMAND='google-chrome-beta'
-    FALLBACK_COMMAND='google-chrome-beta'
     BROWSER_BINARY='/opt/google/chrome-beta/chrome'
     ;;
   dev)
     CHANNEL_DIR='/opt/google/chrome-unstable/extensions'
-    BROWSER_COMMAND='google-chrome-unstable'
-    FALLBACK_COMMAND='google-chrome-unstable'
     BROWSER_BINARY='/opt/google/chrome-unstable/chrome'
     ;;
   *) fail "Unsupported Chrome channel: $CHANNEL (choose stable, beta, dev)" ;;
 esac
 
 [ "$(uname -s)" = "Linux" ] || fail 'Linux is required.'
-if ! command -v "$BROWSER_COMMAND" >/dev/null 2>&1 &&
-   ! command -v "$FALLBACK_COMMAND" >/dev/null 2>&1 &&
-   [ ! -x "$BROWSER_BINARY" ]; then
+if [ ! -x "$BROWSER_BINARY" ]; then
   fail "Google Chrome $CHANNEL is not installed (Chromium and Snap are unsupported)."
 fi
 
@@ -153,3 +149,6 @@ fi
 log "Registered $EXTENSION_ID for Google Chrome $CHANNEL (all profiles)."
 log 'Restart the selected Google Chrome channel and check chrome://extensions.'
 log 'Chrome stores its installed extension internally; no unpacked source folder is required.'
+}
+
+main "$@"
