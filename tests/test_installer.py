@@ -31,7 +31,7 @@ class InstallerTest(unittest.TestCase):
             "dev": self.root / "chrome-dev",
         }
         for browser in self.binaries.values():
-            browser.write_text("#!/bin/sh\\nexit 0\\n")
+            browser.write_text("#!/bin/sh\nexit 0\n")
             browser.chmod(0o755)
         for original, local in (
             ("CHANNEL_DIR='/opt/google/chrome/extensions'", f"CHANNEL_DIR='{self.directory}'"),
@@ -45,7 +45,7 @@ class InstallerTest(unittest.TestCase):
             self.assertIn(original, script)
             script = script.replace(original, local)
         self.assertIn("main() {", script)
-        self.assertTrue(script.endswith('main "$@"\\n'))
+        self.assertTrue(script.endswith('main "$@"\n'))
         self.script = self.root / "install.sh"
         self.script.write_text(script)
 
