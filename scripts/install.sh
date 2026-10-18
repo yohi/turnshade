@@ -5,8 +5,8 @@ set -eu
 
 EXTENSION_ID='__TURNSHADE_EXTENSION_ID__'
 UPDATE_URL='https://yohi.github.io/turnshade/updates.xml'
-INSTALL_DIR='/opt/google/chrome/extensions'
-TARGET="$INSTALL_DIR/$EXTENSION_ID.json"
+PRIMARY_DIR='/opt/google/chrome/extensions'
+ALTERNATE_DIR='/usr/share/google-chrome/extensions'
 
 fail() { printf 'TurnShade: %s\n' "$*" >&2; exit 1; }
 log() { printf 'TurnShade: %s\n' "$*"; }
@@ -54,23 +54,48 @@ print("TurnShade: update manifest verified for " + expected_id)
 ' "$EXTENSION_ID" "$UPDATE_URL" ||
   fail 'Update manifest verification failed; no changes made.'
 
-if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
-  [ ! -L "$TARGET" ] || fail "Refusing symlink: $TARGET"
-  [ -f "$TARGET" ] || fail "Existing path is not a regular file: $TARGET"
+# Both locations are supported by Google Chrome for Linux.
+# Prefer an existing registration wherever it is; do not create duplicates.
+EXISTING_TARGET=''
+for candidate in "$PRIMARY_DIR" "$ALTERNATE_DIR"; do
+  target="$candidate/$EXTENSION_ID.json"
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    [ ! -L "$target" ] || fail "Refusing symlink: $target"
+    [ -f "$target" ] || fail "Existing path is not a regular file: $target"
+    [ -z "$EXISTING_TARGET" ] ||
+      fail "Registration exists in both Chrome directories; inspect them manually"
+    EXISTING_TARGET="$target"
+  fi
+done
+
+if [ -n "$EXISTING_TARGET" ]; then
   python3 -c '
 import json, sys
 try:
-    data = json.load(open(sys.argv[1], encoding="utf-8"))
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        data = json.load(stream)
 except (OSError, ValueError):
     sys.exit(1)
 sys.exit(0 if data == {"external_update_url": sys.argv[2]} else 1)
-' "$TARGET" "$UPDATE_URL" ||
-    fail "Existing registration differs; refusing to overwrite $TARGET"
-  log "Already registered: $EXTENSION_ID (no changes)"
+' "$EXISTING_TARGET" "$UPDATE_URL" ||
+    fail "Existing registration differs; refusing to overwrite $EXISTING_TARGET"
+  log "Already registered: $EXTENSION_ID at $EXISTING_TARGET (no changes)"
   exit 0
 fi
 
-# Limit elevated operations to the single fixed Chrome registration directory.
+# Use an already-present, official Chrome directory when possible. For a
+# fresh Google Chrome installation, use its documented /opt location.
+if [ -d "$PRIMARY_DIR" ]; then
+  INSTALL_DIR="$PRIMARY_DIR"
+elif [ -d "$ALTERNATE_DIR" ]; then
+  INSTALL_DIR="$ALTERNATE_DIR"
+else
+  INSTALL_DIR="$PRIMARY_DIR"
+fi
+[ ! -L "$INSTALL_DIR" ] || fail "Refusing symlink directory: $INSTALL_DIR"
+TARGET="$INSTALL_DIR/$EXTENSION_ID.json"
+
+# Elevated operations are limited to one of Chrome's two documented directories.
 if [ "$(id -u)" -eq 0 ]; then
   install -d -m 755 "$INSTALL_DIR"
   printf '{"external_update_url":"%s"}\n' "$UPDATE_URL" > "$TARGET"
